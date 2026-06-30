@@ -41,6 +41,27 @@ This lab demonstrates that loop end-to-end using Storedog's existing `product-ca
 
 ---
 
+## Get the Lab
+
+Run these two commands from the lab host terminal. That's all you need — the rest is handled automatically.
+
+```bash
+# Clone the workshop branch (fast — single branch, shallow)
+git clone --branch workshop/featureflags-rum --single-branch --depth 1 \
+  https://github.com/datadog-asean-se/storedog.git /root/storedog-ff
+
+# Run the one-shot setup script
+bash /root/storedog-ff/storedog-ff-lab.sh
+```
+
+> **Already have `/root/storedog-ff`?** Pull the latest changes instead:
+> ```bash
+> git -C /root/storedog-ff pull origin workshop/featureflags-rum
+> bash /root/storedog-ff/storedog-ff-lab.sh
+> ```
+
+---
+
 ## Prerequisites
 
 | Requirement | Notes |

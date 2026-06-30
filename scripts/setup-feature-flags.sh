@@ -6,37 +6,48 @@
 # Requires: DD_API_KEY, DD_APP_KEY (from the lab .env), curl, jq
 # Usage:    bash scripts/setup-feature-flags.sh           # normal
 #           bash scripts/setup-feature-flags.sh --debug   # verbose (prints raw API responses)
-#           DEBUG=1 bash scripts/setup-feature-flags.sh   # same via env var
+#           DEBUG_FF=1 bash scripts/setup-feature-flags.sh
 set -euo pipefail
 
 # ── Debug mode ───────────────────────────────────────────────────────────────
 DEBUG=0
 for arg in "$@"; do [[ "$arg" == "--debug" || "$arg" == "-d" ]] && DEBUG=1; done
-[[ "${DEBUG_FF:-0}" == "1" ]] && DEBUG=1  # also honour env var DEBUG_FF=1
+[[ "${DEBUG_FF:-0}" == "1" ]] && DEBUG=1
 
 dbg() {
-  # dbg <label> <json_or_string>  — prints only in debug mode, always to stderr
-  # Must use stderr so output is visible even when the caller is inside $(...) capture
   [ "$DEBUG" -eq 0 ] && return
-  local label="$1"; shift
-  echo "  [DEBUG] ${label}:" >&2
-  echo "$*" | jq '.' 2>/dev/null >&2 || echo "$*" >&2
-  echo "" >&2
+  local label="$1"; local body="${2:-}"
+  printf '  [DEBUG] %s\n' "$label" >&2
+  if [ -n "$body" ]; then
+    printf '%s\n' "$body" | jq '.' 2>/dev/null >&2 || printf '%s\n' "$body" >&2
+  else
+    printf '  (empty response body)\n' >&2
+  fi
+  printf '\n' >&2
 }
 
-curl_dbg() {
-  # Wrapper: in debug mode prints full response body + HTTP code; in normal mode silent.
-  # Uses -o tmpfile so body and status code are captured independently (no separator tricks).
-  local label="$1"; shift
-  local tmpfile body code
-  tmpfile=$(mktemp)
-  code=$(curl -s -o "$tmpfile" -w '%{http_code}' "$@")
-  body=$(cat "$tmpfile"); rm -f "$tmpfile"
-  if [ "$DEBUG" -eq 1 ]; then
-    dbg "$label (HTTP $code)" "$body"
-  fi
-  echo "$body"
+# api_get <label> <url> — returns body via stdout; debug prints body+code to stderr
+api_get() {
+  local label="$1" url="$2"
+  local body code
+  body=$(curl -s "${H[@]}" "$url" || true)
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" "$url" || true)
+  dbg "$label (HTTP $code)" "$body"
+  printf '%s' "$body"
 }
+
+# api_post <label> <url> <data> — returns body; also sets global API_LAST_CODE
+api_post() {
+  local label="$1" url="$2" data="$3"
+  local body
+  API_LAST_CODE=$(curl -s -o /tmp/ff_post_body.tmp -w '%{http_code}' "${H[@]}" -X POST "$url" -d "$data" || true)
+  body=$(cat /tmp/ff_post_body.tmp 2>/dev/null || true)
+  rm -f /tmp/ff_post_body.tmp
+  dbg "$label request body" "$data"
+  dbg "$label response (HTTP $API_LAST_CODE)" "$body"
+  printf '%s' "$body"
+}
+API_LAST_CODE="000"
 
 # ── Credentials (read from environment or .env) ─────────────────────────────
 if [ -z "${DD_API_KEY:-}" ] || [ -z "${DD_APP_KEY:-}" ]; then
@@ -60,40 +71,54 @@ echo ""
 
 # ── Step 1: Validate credentials ────────────────────────────────────────────
 echo "[1/5] Validating credentials..."
-_vtmp=$(mktemp)
-code=$(curl -s -o "$_vtmp" -w '%{http_code}' -H "DD-API-KEY: $DD_API_KEY" "https://api.${SITE}/api/v1/validate")
-dbg "validate response (HTTP $code)" "$(cat "$_vtmp")"; rm -f "$_vtmp"
-if [ "$code" != "200" ]; then
-  echo "ERROR: DD_API_KEY validation failed (HTTP $code). Check your key and DD_SITE." >&2; exit 1
+VALIDATE_CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "DD-API-KEY: $DD_API_KEY" "https://api.${SITE}/api/v1/validate" || true)
+if [ "$DEBUG" -eq 1 ]; then
+  VALIDATE_BODY=$(curl -s -H "DD-API-KEY: $DD_API_KEY" "https://api.${SITE}/api/v1/validate" || true)
+  dbg "validate response (HTTP $VALIDATE_CODE)" "$VALIDATE_BODY"
 fi
-echo "      OK"
+if [ "$VALIDATE_CODE" != "200" ]; then
+  echo "ERROR: DD_API_KEY validation failed (HTTP $VALIDATE_CODE). Check your key and DD_SITE." >&2; exit 1
+fi
+echo "      OK (HTTP $VALIDATE_CODE)"
 
-# ── Step 2: Resolve the 'dev' flag environment ID ───────────────────────────
+# ── Step 2: Resolve the flag environment ID ──────────────────────────────────
 echo "[2/5] Resolving flag environments..."
-ENVS=$(curl_dbg "GET environments" "${H[@]}" "${API}/environments")
-ENV_ID=$(echo "$ENVS" | jq -r '[.[] | select(.is_production == false)] | first | .id // empty' 2>/dev/null)
-if [ -z "$ENV_ID" ]; then
-  # Fallback: first environment regardless of type
-  ENV_ID=$(echo "$ENVS" | jq -r 'first | .id // empty' 2>/dev/null)
+ENVS=$(api_get "GET environments" "${API}/environments")
+
+if [ "$DEBUG" -eq 1 ]; then
+  printf '  [DEBUG] raw ENVS body: %s\n' "$ENVS" >&2
 fi
-if [ -z "$ENV_ID" ]; then
-  echo "ERROR: Could not resolve a flag environment. Does this org have Feature Flags enabled?" >&2; exit 1
+
+# Parse: try non-production first, fall back to any environment
+ENV_ID=$(printf '%s' "$ENVS" | jq -r '[.[] | select(.is_production == false)] | first | .id // empty' 2>/dev/null || true)
+if [ -z "${ENV_ID:-}" ]; then
+  ENV_ID=$(printf '%s' "$ENVS" | jq -r 'first | .id // empty' 2>/dev/null || true)
 fi
-ENV_NAME=$(echo "$ENVS" | jq -r --arg id "$ENV_ID" '.[] | select(.id == $id) | .name' 2>/dev/null)
-echo "      Using environment: '$ENV_NAME' ($ENV_ID)"
+
+if [ -z "${ENV_ID:-}" ]; then
+  echo ""
+  echo "NOTE: Could not find a flag environment automatically." >&2
+  echo "      The Feature Flags environments endpoint returned: ${ENVS:-(empty)}" >&2
+  echo "      Attempting to create the flag without an environment (flag only)..." >&2
+  ENV_ID=""
+  ENV_NAME="(none)"
+else
+  ENV_NAME=$(printf '%s' "$ENVS" | jq -r --arg id "$ENV_ID" '.[] | select(.id == $id) | .name' 2>/dev/null || true)
+  echo "      Using environment: '${ENV_NAME:-unknown}' (${ENV_ID})"
+fi
 
 # ── Step 3: Check if flag already exists ────────────────────────────────────
 echo "[3/5] Checking if '$FLAG_KEY' already exists..."
-EXISTING=$(curl_dbg "GET flags list (filter key=$FLAG_KEY)" "${H[@]}" "${API}?filter[key]=${FLAG_KEY}")
-EXISTING_ID=$(echo "$EXISTING" | jq -r '.data[]? | select(.attributes.key == "'"$FLAG_KEY"'") | .id // empty' 2>/dev/null | head -1)
+EXISTING=$(api_get "GET flags (filter key=$FLAG_KEY)" "${API}?filter[key]=${FLAG_KEY}")
+EXISTING_ID=$(printf '%s' "$EXISTING" | jq -r '.data[]? | select(.attributes.key == "'"$FLAG_KEY"'") | .id // empty' 2>/dev/null | head -1 || true)
 
-if [ -n "$EXISTING_ID" ]; then
+if [ -n "${EXISTING_ID:-}" ]; then
   echo "      Flag already exists (id=$EXISTING_ID). Skipping creation."
   FLAG_ID="$EXISTING_ID"
 else
   # ── Step 4a: Create the flag ───────────────────────────────────────────────
   echo "[4/5] Creating flag '$FLAG_KEY'..."
-  BODY=$(cat <<JSON
+  CREATE_BODY=$(cat <<JSON
 {
   "data": {
     "type": "feature_flags",
@@ -111,34 +136,46 @@ else
 }
 JSON
 )
-  dbg "POST create-flag request body" "$BODY"
-  _ctmp=$(mktemp)
-  HTTP_CODE=$(curl -s -o "$_ctmp" -w '%{http_code}' "${H[@]}" -X POST "${API}" -d "$BODY")
-  BODY_RESP=$(cat "$_ctmp"); rm -f "$_ctmp"
-  dbg "POST create-flag response (HTTP $HTTP_CODE)" "$BODY_RESP"
-  if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
-    echo "ERROR: Flag creation failed (HTTP $HTTP_CODE):" >&2
-    echo "$BODY_RESP" | jq '.' 2>/dev/null || echo "$BODY_RESP" >&2; exit 1
+  CREATE_RESP=$(api_post "POST create-flag" "${API}" "$CREATE_BODY")
+  if [ "$API_LAST_CODE" != "200" ] && [ "$API_LAST_CODE" != "201" ]; then
+    echo "ERROR: Flag creation failed (HTTP $API_LAST_CODE):" >&2
+    printf '%s\n' "$CREATE_RESP" | jq '.' 2>/dev/null >&2 || printf '%s\n' "$CREATE_RESP" >&2
+    exit 1
   fi
-  FLAG_ID=$(echo "$BODY_RESP" | jq -r '.data.id // .id // empty' 2>/dev/null)
+  FLAG_ID=$(printf '%s' "$CREATE_RESP" | jq -r '.data.id // .id // empty' 2>/dev/null || true)
+  if [ -z "${FLAG_ID:-}" ]; then
+    echo "ERROR: Could not extract flag ID from creation response." >&2
+    printf '%s\n' "$CREATE_RESP" >&2; exit 1
+  fi
   echo "      Created (id=$FLAG_ID)"
 fi
 
-# ── Step 4b: Get variant IDs ────────────────────────────────────────────────
-FLAG_DETAIL=$(curl_dbg "GET flag detail (id=$FLAG_ID)" "${H[@]}" "${API}/${FLAG_ID}")
-CONTROL_VID=$(echo "$FLAG_DETAIL" | jq -r '.data.attributes.variants[]? | select(.key=="control") | .id // empty' 2>/dev/null | head -1)
-FRUSTRATION_VID=$(echo "$FLAG_DETAIL" | jq -r '.data.attributes.variants[]? | select(.key=="frustration") | .id // empty' 2>/dev/null | head -1)
+# ── Step 4b: Get variant IDs from flag detail ────────────────────────────────
+FLAG_DETAIL=$(api_get "GET flag detail" "${API}/${FLAG_ID}")
+CONTROL_VID=$(printf '%s' "$FLAG_DETAIL" | jq -r '.data.attributes.variants[]? | select(.key=="control") | .id // empty' 2>/dev/null | head -1 || true)
+FRUSTRATION_VID=$(printf '%s' "$FLAG_DETAIL" | jq -r '.data.attributes.variants[]? | select(.key=="frustration") | .id // empty' 2>/dev/null | head -1 || true)
+
+# Also resolve ENV_ID from flag detail if step 2 couldn't get it
+if [ -z "${ENV_ID:-}" ]; then
+  ENV_ID=$(printf '%s' "$FLAG_DETAIL" | jq -r '.data.attributes.feature_flag_environments[]? | select(.is_production == false) | .environment_id // empty' 2>/dev/null | head -1 || true)
+  if [ -z "${ENV_ID:-}" ]; then
+    ENV_ID=$(printf '%s' "$FLAG_DETAIL" | jq -r '.data.attributes.feature_flag_environments[0]?.environment_id // empty' 2>/dev/null || true)
+  fi
+  ENV_NAME=$(printf '%s' "$FLAG_DETAIL" | jq -r --arg id "$ENV_ID" '.data.attributes.feature_flag_environments[]? | select(.environment_id == $id) | .environment_name // empty' 2>/dev/null || true)
+  [ -n "${ENV_ID:-}" ] && echo "      Resolved environment from flag detail: '${ENV_NAME:-unknown}' ($ENV_ID)"
+fi
 
 # ── Step 5: Create or verify allocation (FEATURE_GATE 50/50) ────────────────
-echo "[5/5] Setting up 50/50 allocation in environment '$ENV_NAME'..."
-ALLOC_URL="${API}/${FLAG_ID}/environments/${ENV_ID}/allocations"
-EXISTING_ALLOC=$(curl_dbg "GET existing allocations" "${H[@]}" "${ALLOC_URL}")
-ALLOC_COUNT=$(echo "$EXISTING_ALLOC" | jq '[.data // [] | .[]] | length' 2>/dev/null || echo "0")
+if [ -n "${ENV_ID:-}" ]; then
+  echo "[5/5] Setting up 50/50 allocation in environment '${ENV_NAME:-unknown}'..."
+  ALLOC_URL="${API}/${FLAG_ID}/environments/${ENV_ID}/allocations"
+  EXISTING_ALLOC=$(api_get "GET existing allocations" "${ALLOC_URL}")
+  ALLOC_COUNT=$(printf '%s' "$EXISTING_ALLOC" | jq '[.data // [] | .[]] | length' 2>/dev/null || echo "0")
 
-if [ "${ALLOC_COUNT:-0}" -gt 0 ]; then
-  echo "      Allocation already exists ($ALLOC_COUNT rule(s)). Skipping."
-else
-  ALLOC_BODY=$(cat <<JSON
+  if [ "${ALLOC_COUNT:-0}" -gt 0 ] 2>/dev/null; then
+    echo "      Allocation already exists ($ALLOC_COUNT rule(s)). Skipping."
+  else
+    ALLOC_DATA=$(cat <<JSON
 {
   "data": {
     "type": "allocations",
@@ -149,8 +186,8 @@ else
           "key": "workshop-rollout",
           "type": "FEATURE_GATE",
           "variant_weights": [
-            {"variant_id": "${CONTROL_VID}",     "value": 50},
-            {"variant_id": "${FRUSTRATION_VID}", "value": 50}
+            {"variant_id": "${CONTROL_VID:-}",     "value": 50},
+            {"variant_id": "${FRUSTRATION_VID:-}", "value": 50}
           ],
           "targeting_rules": []
         }
@@ -160,23 +197,21 @@ else
 }
 JSON
 )
-  dbg "POST allocation request body" "$ALLOC_BODY"
-  _atmp=$(mktemp)
-  ACODE=$(curl -s -o "$_atmp" -w '%{http_code}' "${H[@]}" -X POST "${ALLOC_URL}" -d "$ALLOC_BODY")
-  dbg "POST allocation response (HTTP $ACODE)" "$(cat "$_atmp")"; rm -f "$_atmp"
-  if [ "$ACODE" != "200" ] && [ "$ACODE" != "201" ]; then
-    echo "      NOTE: Allocation via POST returned HTTP $ACODE — may need to be set manually in the UI."
-    echo "      Flag is created. Open https://app.datadoghq.com/feature-flags and add targeting rules manually."
-  else
-    echo "      Allocation created."
+    api_post "POST allocation" "${ALLOC_URL}" "$ALLOC_DATA" > /dev/null
+    if [ "$API_LAST_CODE" = "200" ] || [ "$API_LAST_CODE" = "201" ]; then
+      echo "      Allocation created."
+    else
+      echo "      NOTE: Allocation returned HTTP $API_LAST_CODE — set targeting rules manually in the UI."
+    fi
   fi
-fi
 
-# ── Enable flag in the target environment ────────────────────────────────────
-echo "      Enabling flag in environment '$ENV_NAME'..."
-_etmp=$(mktemp)
-ENABLE_CODE=$(curl -s -o "$_etmp" -w '%{http_code}' "${H[@]}" -X POST "${API}/${FLAG_ID}/environments/${ENV_ID}/enable")
-dbg "POST enable response (HTTP $ENABLE_CODE)" "$(cat "$_etmp")"; rm -f "$_etmp"
+  # Enable the flag in the environment
+  echo "      Enabling flag in environment '${ENV_NAME:-unknown}'..."
+  api_post "POST enable" "${API}/${FLAG_ID}/environments/${ENV_ID}/enable" "{}" > /dev/null || true
+else
+  echo "[5/5] No environment resolved — skipping allocation and enable."
+  echo "      Open https://app.${SITE}/feature-flags/${FLAG_ID} to configure manually."
+fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

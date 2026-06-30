@@ -10,6 +10,9 @@ import { Head } from '@components/common'
 import { ManagedUIContext } from '@components/ui/context'
 import { datadogRum } from '@datadog/browser-rum'
 import ErrorBoundary from '@components/ErrorBoundary'
+import { OpenFeatureProvider } from '@openfeature/react-sdk'
+import { OpenFeature } from '@openfeature/web-sdk'
+import { DatadogProvider } from '@datadog/openfeature-browser'
 
 datadogRum.init({
   applicationId: `${
@@ -50,6 +53,7 @@ datadogRum.init({
   ],
   traceSampleRate: 100,
   allowUntrustedEvents: true,
+  enableExperimentalFeatures: ['feature_flags'],
   beforeSend: (event) => {
     if (
       event.type === 'error' &&
@@ -62,6 +66,22 @@ datadogRum.init({
     return true
   },
 })
+
+// Initialise Datadog OpenFeature provider client-side only.
+// env:'dev' targets the 'dev' Datadog Feature Flag environment.
+// enableFlagEvaluationTracking wires flag variants into every RUM session automatically.
+if (typeof window !== 'undefined') {
+  const ffProvider = new DatadogProvider({
+    clientToken: `${process.env.NEXT_PUBLIC_DD_CLIENT_TOKEN || ''}`,
+    applicationId: `${process.env.NEXT_PUBLIC_DD_APPLICATION_ID || ''}`,
+    site: (process.env.NEXT_PUBLIC_DD_SITE || 'datadoghq.com') as any,
+    env: 'dev',
+    service: 'store-frontend',
+    enableExposureLogging: true,
+    enableFlagEvaluationTracking: true,
+  })
+  OpenFeature.setProvider(ffProvider)
+}
 
 const Noop: FC = ({ children }) => <>{children}</>
 
@@ -92,17 +112,19 @@ export default function MyApp({ Component, pageProps }: AppProps) {
 
   return (
     <>
-      <CartProvider>
-        <Head />
-        <ManagedUIContext>
-          <CartWatcher />
-          <Layout pageProps={pageProps}>
-            <ErrorBoundary>
-              <Component {...pageProps} />
-            </ErrorBoundary>
-          </Layout>
-        </ManagedUIContext>
-      </CartProvider>
+      <OpenFeatureProvider>
+        <CartProvider>
+          <Head />
+          <ManagedUIContext>
+            <CartWatcher />
+            <Layout pageProps={pageProps}>
+              <ErrorBoundary>
+                <Component {...pageProps} />
+              </ErrorBoundary>
+            </Layout>
+          </ManagedUIContext>
+        </CartProvider>
+      </OpenFeatureProvider>
     </>
   )
 }

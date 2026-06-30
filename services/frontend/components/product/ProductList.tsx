@@ -6,6 +6,7 @@ import ProductCard from '@components/product/ProductCard'
 import { ProductCard as ProductCardV2 } from '@components/product/ProductCard/ProductCard-v2'
 import { Container, Skeleton } from '@components/ui'
 import rangeMap from '@lib/range-map'
+import { useBooleanFlagValue } from '@openfeature/react-sdk'
 
 import { Product } from '@customTypes/product'
 import { Page } from '@customTypes/page'
@@ -25,6 +26,13 @@ export default function ProductList({
   taxon,
   cardVersion,
 }: Props) {
+  // Datadog Feature Flag: 'product-card-frustration'
+  // true  → broken thumbnail cards (v2) — drives RUM Frustration Signals
+  // false → normal cards (v1, default / safe state)
+  // The flag value from Datadog overrides the server-side cardVersion prop,
+  // and is automatically recorded in every RUM session for variant analysis.
+  const frustrationFlagEnabled = useBooleanFlagValue('product-card-frustration', false)
+  const resolvedCardVersion = frustrationFlagEnabled ? 'v2' : (cardVersion ?? 'v1')
   // if products prop is still empty after 5 seconds, show not found message
   const [notFound, setNotFound] = useState(false)
   useEffect(() => {
@@ -61,7 +69,7 @@ export default function ProductList({
   }
 
   const ProductCardComponent =
-    cardVersion === 'v2' ? ProductCardV2 : ProductCard
+    resolvedCardVersion === 'v2' ? ProductCardV2 : ProductCard
 
   return (
     <Container>

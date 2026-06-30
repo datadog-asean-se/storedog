@@ -2,9 +2,10 @@ import type { GetServerSidePropsContext } from 'next'
 import { ProductList } from '@components/product'
 import { Page } from '@customTypes/page'
 import { Product } from '@customTypes/product'
-import { codeStash } from 'code-stash'
-import config from '../../featureFlags.config.json'
 
+// product-card-frustration is now evaluated client-side via Datadog Feature Flags
+// (OpenFeature provider in _app.tsx). The cardVersion prop is intentionally omitted
+// so ProductList falls back to its own flag-driven logic.
 export async function getServerSideProps(context: GetServerSidePropsContext) {
   const baseUrl = process.env.NEXT_PUBLIC_FRONTEND_API_ROUTE
     ? `${process.env.NEXT_PUBLIC_FRONTEND_API_ROUTE}/api`
@@ -19,15 +20,11 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
 
   const taxons = await fetch(`${baseUrl}/taxonomies`).then((res) => res.json())
 
-  const flag =
-    (await codeStash('product-card-frustration', { file: config })) || false
-
   return {
     props: {
       products,
       pages,
       taxons,
-      cardVersion: flag ? 'v2' : 'v1',
     },
   }
 }

@@ -109,15 +109,14 @@ else
 fi
 
 # ── Step 3: Check if flag already exists ────────────────────────────────────
+# Note: filter[key] query param is NOT used — curl interprets [...] as a glob
+# and silently fails. Fetch all flags and search client-side instead.
 echo "[3/5] Checking if '$FLAG_KEY' already exists..."
-api_get "GET flags" "${API}?filter[key]=${FLAG_KEY}"
+api_get "GET all flags" "${API}"
 EXISTING=$(cat "$FF_TMP" 2>/dev/null || true)
 
-# Try JSON:API format first (.data[]), fall back to bare array (.[]?)
 EXISTING_ID=$(printf '%s' "$EXISTING" | jq -r '
-  if .data then .data[]? else .[]? end
-  | select(.attributes.key == "'"$FLAG_KEY"'" or .key == "'"$FLAG_KEY"'")
-  | .id // empty
+  .data[]? | select(.attributes.key == "'"$FLAG_KEY"'") | .id // empty
 ' 2>/dev/null | head -1 || true)
 
 if [ -n "${EXISTING_ID:-}" ]; then
@@ -149,21 +148,34 @@ JSON
   api_post "POST create-flag" "${API}" "$FF_DATA_FILE"
   rm -f "$FF_DATA_FILE"
 
-  if [ "$FF_HTTP_CODE" != "200" ] && [ "$FF_HTTP_CODE" != "201" ]; then
+  if [ "$FF_HTTP_CODE" = "409" ]; then
+    # Conflict: flag already exists but was missed by step 3 (e.g. on re-run).
+    # Fetch the flag list to recover the ID.
+    echo "      Flag already exists (409 Conflict). Recovering ID from flag list..."
+    api_get "GET all flags (recover id)" "${API}"
+    FLAG_ID=$(cat "$FF_TMP" | jq -r '
+      .data[]? | select(.attributes.key == "'"$FLAG_KEY"'") | .id // empty
+    ' 2>/dev/null | head -1 || true)
+    if [ -z "${FLAG_ID:-}" ]; then
+      echo "ERROR: Flag exists but could not retrieve its ID. Delete it manually and retry." >&2; exit 1
+    fi
+    echo "      Recovered existing flag (id=$FLAG_ID)"
+  elif [ "$FF_HTTP_CODE" != "200" ] && [ "$FF_HTTP_CODE" != "201" ]; then
     echo "ERROR: Flag creation failed (HTTP $FF_HTTP_CODE):" >&2
-    # Print raw body first (always), then pretty-print if jq is available
     ERRBODY=$(cat "$FF_TMP" 2>/dev/null || true)
     if [ -n "$ERRBODY" ]; then
       printf '%s\n' "$ERRBODY" | jq '.' 2>&1 >&2 || printf '%s\n' "$ERRBODY" >&2
     else
-      printf '  (empty response body — run with DEBUG_FF=1 for full curl output)\n' >&2
+      printf '  (empty response body — run with DEBUG_FF=1 for verbose output)\n' >&2
     fi
     echo "  Hint: run:  DEBUG_FF=1 bash scripts/setup-feature-flags.sh" >&2
     exit 1
   fi
 
   # Response: {"data":{"id":"...","type":"feature-flags","attributes":{...}}}
-  FLAG_ID=$(jq -r '.data.id // empty' "$FF_TMP" 2>/dev/null || true)
+  if [ -z "${FLAG_ID:-}" ]; then
+    FLAG_ID=$(jq -r '.data.id // empty' "$FF_TMP" 2>/dev/null || true)
+  fi
   if [ -z "${FLAG_ID:-}" ]; then
     echo "ERROR: Could not extract flag ID from creation response:" >&2
     cat "$FF_TMP" >&2; exit 1

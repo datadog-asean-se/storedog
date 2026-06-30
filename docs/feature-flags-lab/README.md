@@ -149,8 +149,8 @@ This section explains what the workshop branch added to Storedog. You don't need
 
 ```json
 "@datadog/openfeature-browser": "^1.2.3",
-"@openfeature/react-sdk": "^1.5.0",
-"@openfeature/web-sdk": "^1.5.0"
+"@openfeature/react-sdk": "^1.4.1",
+"@openfeature/web-sdk": "^1.9.0"
 ```
 
 **OpenFeature** is a [CNCF](https://cncf.io) open standard — a vendor-neutral API for feature flags. Think of it like OpenTelemetry, but for flags. Your app code calls `useBooleanFlagValue('my-flag', false)` regardless of which flag backend (Datadog, LaunchDarkly, etc.) is behind it.

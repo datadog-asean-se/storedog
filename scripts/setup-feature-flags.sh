@@ -209,29 +209,25 @@ fi
 if [ -n "${ENV_ID:-}" ]; then
   echo "[5/5] Setting up 50/50 allocation in '${ENV_NAME:-unknown}'..."
   ALLOC_URL="${API}/${FLAG_ID}/environments/${ENV_ID}/allocations"
-  api_get "GET existing allocations" "${ALLOC_URL}"
-  EXISTING_ALLOC=$(cat "$FF_TMP" 2>/dev/null || true)
-  ALLOC_COUNT=$(printf '%s' "$EXISTING_ALLOC" | jq '([.data // .] | flatten) | length' 2>/dev/null || echo "0")
 
-  if [ "${ALLOC_COUNT:-0}" -gt 0 ] 2>/dev/null; then
-    echo "      Allocation already exists. Skipping."
-  elif [ -n "${CONTROL_VID:-}" ] && [ -n "${FRUSTRATION_VID:-}" ]; then
+  # Note: GET /allocations returns 405 (not supported) — always attempt to create.
+  # The API is idempotent on key collision (will update existing allocation with same key).
+  if [ -n "${CONTROL_VID:-}" ] && [ -n "${FRUSTRATION_VID:-}" ]; then
     FF_ALLOC_FILE=$(mktemp)
+    # Correct format: name/key/type/variant_weights at data.attributes level (NOT nested in allocations[])
     cat > "$FF_ALLOC_FILE" <<JSON
 {
   "data": {
     "type": "allocations",
     "attributes": {
-      "allocations": [{
-        "name": "Workshop 50/50 rollout",
-        "key": "workshop-rollout",
-        "type": "FEATURE_GATE",
-        "variant_weights": [
-          {"variant_id": "${CONTROL_VID}",     "value": 50},
-          {"variant_id": "${FRUSTRATION_VID}", "value": 50}
-        ],
-        "targeting_rules": []
-      }]
+      "name": "Workshop 50/50",
+      "key": "workshop-5050",
+      "type": "FEATURE_GATE",
+      "variant_weights": [
+        {"variant_id": "${CONTROL_VID}",     "value": 50},
+        {"variant_id": "${FRUSTRATION_VID}", "value": 50}
+      ],
+      "targeting_rules": []
     }
   }
 }

@@ -228,12 +228,11 @@ Click into the flag. Observe:
 
 - **Environments tab** — the flag is **ENABLED** in the `Development` environment (where Storedog sends data with `env:'dev'`)
 - **Variants** — `control` returns `false`, `frustration` returns `true`
-- **"If no rules are met → Frustration (broken cards)"** — this is the default: when the flag is enabled with no targeting rules, **100% of users receive the frustration variant** (broken product thumbnails)
-- **Real-time Metrics** — after a few minutes of Puppeteer traffic, you will see exposure counts and RUM performance metrics appear on this page
+- **Targeting Rule: "Workshop 50/50" — 50% Control / 50% Frustration** — the setup script creates this rule automatically so half of Puppeteer sessions get each variant
+- **"If no rules are met → Frustration (broken cards)"** — the fallback default if no targeting rule matches
+- **Real-time Metrics** — after a few minutes of Puppeteer traffic, you will see exposure counts per variant and RUM performance metrics appear on this page
 
-> **Why 100% frustration?** The setup script creates the flag with `frustration` as the default variant. This is intentional for the workshop demo: the flag acts as a simple on/off switch. Flag **ENABLED** = all users see broken cards. Flag **DISABLED** = OpenFeature returns the SDK default (`false`) = all users see good cards.
-
-> **Instructor note:** This page is the "flag as a dashboard" story — you can see real-time RUM and APM signals correlated directly to the flag state without switching tools.
+> **Instructor note:** This page is the "flag as a dashboard" story — real-time RUM signals split by variant, all in one place without switching tools.
 
 ---
 
@@ -246,18 +245,25 @@ Click into the flag. Observe:
 
 ### Step 4.2 — Filter sessions by flag variant
 
-In the search bar, type:
+In the search bar, filter to the frustration cohort:
 
 ```
 @feature_flags.product-card-frustration:frustration
 ```
 
-Since the flag is enabled with 100% `frustration` as the default, all sessions from this app will have `@feature_flags.product-card-frustration: frustration` attached. Every single one of these users is experiencing the broken product cards.
+Then compare to the control cohort:
 
-**What to look for in these sessions:**
-- Unusually high **Rage Clicks** and **Dead Clicks** — users clicking the broken thumbnails
-- High **Frustration Signals** count
-- Short session duration — users giving up
+```
+@feature_flags.product-card-frustration:control
+```
+
+**What to look for:**
+
+| Metric | `control` variant | `frustration` variant |
+|---|---|---|
+| Frustration Signals | Low | High (rage clicks on broken thumbnails) |
+| Dead clicks | Rare | Frequent — users clicking unlinked thumbnails |
+| Session duration | Normal | Shorter — users give up and leave |
 
 > **Key insight:** You didn't write any tracking code. The flag variant appeared in RUM automatically because `enableFlagEvaluationTracking: true` was set in the DatadogProvider. Every evaluation is wired into every session.
 

@@ -85,14 +85,15 @@ fi
 
 # Expose DD_APPLICATION_ID / DD_CLIENT_TOKEN as NEXT_PUBLIC_* if they are not already set
 # (the lab .env uses the non-prefixed names; Next.js needs NEXT_PUBLIC_* in the browser)
+# Note: grep || true is intentional — grep exits 1 when no match, which would abort under set -e
 if [ -f "${FF_DIR}/.env" ]; then
-  APP_ID=$(grep '^DD_APPLICATION_ID=' "${FF_DIR}/.env" | cut -d= -f2- | tr -d '"' | head -1)
-  CLIENT_TOK=$(grep '^DD_CLIENT_TOKEN=' "${FF_DIR}/.env" | cut -d= -f2- | tr -d '"' | head -1)
-  if [ -n "$APP_ID" ] && ! grep -q '^NEXT_PUBLIC_DD_APPLICATION_ID=' "${FF_DIR}/.env"; then
+  APP_ID=$(grep '^DD_APPLICATION_ID=' "${FF_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | head -1 || true)
+  CLIENT_TOK=$(grep '^DD_CLIENT_TOKEN=' "${FF_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | head -1 || true)
+  if [ -n "$APP_ID" ] && ! grep -q '^NEXT_PUBLIC_DD_APPLICATION_ID=' "${FF_DIR}/.env" 2>/dev/null; then
     echo "NEXT_PUBLIC_DD_APPLICATION_ID=${APP_ID}" >> "${FF_DIR}/.env"
     echo "      Added NEXT_PUBLIC_DD_APPLICATION_ID to .env"
   fi
-  if [ -n "$CLIENT_TOK" ] && ! grep -q '^NEXT_PUBLIC_DD_CLIENT_TOKEN=' "${FF_DIR}/.env"; then
+  if [ -n "$CLIENT_TOK" ] && ! grep -q '^NEXT_PUBLIC_DD_CLIENT_TOKEN=' "${FF_DIR}/.env" 2>/dev/null; then
     echo "NEXT_PUBLIC_DD_CLIENT_TOKEN=${CLIENT_TOK}" >> "${FF_DIR}/.env"
     echo "      Added NEXT_PUBLIC_DD_CLIENT_TOKEN to .env"
   fi

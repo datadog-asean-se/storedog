@@ -26,18 +26,16 @@ dbg() {
 
 curl_dbg() {
   # Wrapper: in debug mode prints full response body + HTTP code; in normal mode silent.
+  # Uses -o tmpfile so body and status code are captured independently (no separator tricks).
   local label="$1"; shift
+  local tmpfile body code
+  tmpfile=$(mktemp)
+  code=$(curl -s -o "$tmpfile" -w '%{http_code}' "$@")
+  body=$(cat "$tmpfile"); rm -f "$tmpfile"
   if [ "$DEBUG" -eq 1 ]; then
-    local out
-    out=$(curl -s -w '\n__HTTP__%{http_code}' "$@")
-    local body code
-    body=$(echo "$out" | sed '$d')
-    code=$(echo "$out" | tail -1 | sed 's/__HTTP__//')
     dbg "$label (HTTP $code)" "$body"
-    echo "$body"
-  else
-    curl -s "$@"
   fi
+  echo "$body"
 }
 
 # ── Credentials (read from environment or .env) ─────────────────────────────
@@ -62,9 +60,9 @@ echo ""
 
 # ── Step 1: Validate credentials ────────────────────────────────────────────
 echo "[1/5] Validating credentials..."
-VALIDATE_RESP=$(curl -s -w '\n__HTTP__%{http_code}' -H "DD-API-KEY: $DD_API_KEY" "https://api.${SITE}/api/v1/validate")
-code=$(echo "$VALIDATE_RESP" | tail -1 | sed 's/__HTTP__//')
-dbg "validate response" "$(echo "$VALIDATE_RESP" | sed '$d')"
+_vtmp=$(mktemp)
+code=$(curl -s -o "$_vtmp" -w '%{http_code}' -H "DD-API-KEY: $DD_API_KEY" "https://api.${SITE}/api/v1/validate")
+dbg "validate response (HTTP $code)" "$(cat "$_vtmp")"; rm -f "$_vtmp"
 if [ "$code" != "200" ]; then
   echo "ERROR: DD_API_KEY validation failed (HTTP $code). Check your key and DD_SITE." >&2; exit 1
 fi
@@ -114,9 +112,9 @@ else
 JSON
 )
   dbg "POST create-flag request body" "$BODY"
-  RESP=$(curl -s -w '\n__HTTP__%{http_code}' "${H[@]}" -X POST "${API}" -d "$BODY")
-  HTTP_CODE=$(echo "$RESP" | tail -1 | sed 's/__HTTP__//')
-  BODY_RESP=$(echo "$RESP" | sed '$d')
+  _ctmp=$(mktemp)
+  HTTP_CODE=$(curl -s -o "$_ctmp" -w '%{http_code}' "${H[@]}" -X POST "${API}" -d "$BODY")
+  BODY_RESP=$(cat "$_ctmp"); rm -f "$_ctmp"
   dbg "POST create-flag response (HTTP $HTTP_CODE)" "$BODY_RESP"
   if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
     echo "ERROR: Flag creation failed (HTTP $HTTP_CODE):" >&2
@@ -163,9 +161,9 @@ else
 JSON
 )
   dbg "POST allocation request body" "$ALLOC_BODY"
-  ARESP=$(curl -s -w '\n__HTTP__%{http_code}' "${H[@]}" -X POST "${ALLOC_URL}" -d "$ALLOC_BODY")
-  ACODE=$(echo "$ARESP" | tail -1 | sed 's/__HTTP__//')
-  dbg "POST allocation response (HTTP $ACODE)" "$(echo "$ARESP" | sed '$d')"
+  _atmp=$(mktemp)
+  ACODE=$(curl -s -o "$_atmp" -w '%{http_code}' "${H[@]}" -X POST "${ALLOC_URL}" -d "$ALLOC_BODY")
+  dbg "POST allocation response (HTTP $ACODE)" "$(cat "$_atmp")"; rm -f "$_atmp"
   if [ "$ACODE" != "200" ] && [ "$ACODE" != "201" ]; then
     echo "      NOTE: Allocation via POST returned HTTP $ACODE — may need to be set manually in the UI."
     echo "      Flag is created. Open https://app.datadoghq.com/feature-flags and add targeting rules manually."
@@ -176,9 +174,9 @@ fi
 
 # ── Enable flag in the target environment ────────────────────────────────────
 echo "      Enabling flag in environment '$ENV_NAME'..."
-ENABLE_RESP=$(curl -s -w '\n__HTTP__%{http_code}' "${H[@]}" -X POST "${API}/${FLAG_ID}/environments/${ENV_ID}/enable")
-ENABLE_CODE=$(echo "$ENABLE_RESP" | tail -1 | sed 's/__HTTP__//')
-dbg "POST enable response (HTTP $ENABLE_CODE)" "$(echo "$ENABLE_RESP" | sed '$d')"
+_etmp=$(mktemp)
+ENABLE_CODE=$(curl -s -o "$_etmp" -w '%{http_code}' "${H[@]}" -X POST "${API}/${FLAG_ID}/environments/${ENV_ID}/enable")
+dbg "POST enable response (HTTP $ENABLE_CODE)" "$(cat "$_etmp")"; rm -f "$_etmp"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

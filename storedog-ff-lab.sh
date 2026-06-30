@@ -44,15 +44,37 @@ echo "║  Storedog — Feature Flags × RUM Workshop Lab Setup  ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 
-# ── Step 1: Stop the base workshop stack ────────────────────────────────────
+# ── Step 1: Stop any existing storedog stack + free port 80 ─────────────────
+echo "[1/5] Stopping any running storedog stacks..."
+
+# Try the detected base dir first
 if [ -f "${LAB_BASE_DIR}/docker-compose.dev.yml" ]; then
-  echo "[1/5] Stopping base storedog stack at ${LAB_BASE_DIR}..."
+  echo "      Found compose at ${LAB_BASE_DIR} — stopping..."
   docker compose -f "${LAB_BASE_DIR}/docker-compose.dev.yml" down 2>/dev/null || true
-  echo "      Stopped."
-else
-  echo "[1/5] Base storedog compose not found at ${LAB_BASE_DIR} — skipping stop."
-  echo "      (Set LAB_BASE_DIR=/path/to/storedog to override)"
 fi
+
+# Also scan all running docker-compose projects for anything using port 80
+for project_dir in $(docker inspect $(docker ps -q) 2>/dev/null \
+    | jq -r '.[].Config.Labels["com.docker.compose.project.working_dir"] // empty' 2>/dev/null \
+    | sort -u); do
+  if [ -n "$project_dir" ] && [ "$project_dir" != "$FF_DIR" ]; then
+    for cf in docker-compose.dev.yml docker-compose.yml; do
+      if [ -f "${project_dir}/${cf}" ]; then
+        echo "      Stopping compose project at ${project_dir}..."
+        docker compose -f "${project_dir}/${cf}" down 2>/dev/null || true
+        break
+      fi
+    done
+  fi
+done
+
+# Last resort: kill any container bound to port 80
+PORT80=$(docker ps --filter "publish=80" -q 2>/dev/null)
+if [ -n "$PORT80" ]; then
+  echo "      Stopping container(s) still on port 80: $PORT80"
+  docker stop $PORT80 2>/dev/null || true
+fi
+echo "      Done."
 
 # ── Step 2: Clone or update the workshop branch ──────────────────────────────
 echo "[2/5] Setting up workshop repo at ${FF_DIR}..."

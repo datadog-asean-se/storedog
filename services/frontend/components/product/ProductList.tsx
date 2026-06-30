@@ -46,21 +46,23 @@ export default function ProductList({
 
   function renderTaxonsList(taxons: any) {
     return Object.keys(taxons).map((taxon) => {
+      const item = taxons[taxon]
+      if (!item) return null
       return (
         <li
-          className={taxons[taxon].children?.length ? 'list-none' : 'list-disc'}
-          key={taxons[taxon].id}
+          className={item.children?.length ? 'list-none' : 'list-disc'}
+          key={item.id}
         >
-          {taxons[taxon].children?.length ? (
-            taxons[taxon].attributes.name
+          {item.children?.length ? (
+            item.attributes?.name
           ) : (
-            <Link href={`/taxonomies/${taxons[taxon].attributes.permalink}`}>
-              {taxons[taxon].attributes.name}
+            <Link href={`/taxonomies/${item.attributes?.permalink ?? ''}`}>
+              {item.attributes?.name}
             </Link>
           )}
-          {taxons[taxon].children?.length > 0 && (
+          {item.children?.length > 0 && (
             <ul className="ps-5 mt-2 space-y-1 list-disc list-inside">
-              {renderTaxonsList(taxons[taxon].children)}
+              {renderTaxonsList(item.children)}
             </ul>
           )}
         </li>

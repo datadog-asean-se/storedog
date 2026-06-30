@@ -138,8 +138,14 @@ JSON
 
   if [ "$FF_HTTP_CODE" != "200" ] && [ "$FF_HTTP_CODE" != "201" ]; then
     echo "ERROR: Flag creation failed (HTTP $FF_HTTP_CODE):" >&2
-    # Print full error — useful even without --debug
-    cat "$FF_TMP" | jq '.' 2>/dev/null >&2 || cat "$FF_TMP" >&2
+    # Print raw body first (always), then pretty-print if jq is available
+    ERRBODY=$(cat "$FF_TMP" 2>/dev/null || true)
+    if [ -n "$ERRBODY" ]; then
+      printf '%s\n' "$ERRBODY" | jq '.' 2>&1 >&2 || printf '%s\n' "$ERRBODY" >&2
+    else
+      printf '  (empty response body — run with DEBUG_FF=1 for full curl output)\n' >&2
+    fi
+    echo "  Hint: run:  DEBUG_FF=1 bash scripts/setup-feature-flags.sh" >&2
     exit 1
   fi
 

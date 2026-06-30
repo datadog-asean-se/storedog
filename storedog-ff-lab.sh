@@ -11,10 +11,33 @@
 #   5. Starts the feature-flag-enabled stack
 set -euo pipefail
 
-LAB_BASE_DIR="${LAB_BASE_DIR:-/root/storedog}"
 REPO="https://github.com/datadog-asean-se/storedog.git"
 BRANCH="workshop/featureflags-rum"
 FF_DIR="/root/storedog-ff"
+
+# ── Auto-detect base storedog dir ────────────────────────────────────────────
+if [ -n "${LAB_BASE_DIR:-}" ]; then
+  : # honour explicit override
+else
+  LAB_BASE_DIR=""
+  for candidate in /root/storedog /root/lab /home/lab /workspace /opt/storedog; do
+    if [ -f "${candidate}/docker-compose.dev.yml" ] || [ -f "${candidate}/.env" ]; then
+      LAB_BASE_DIR="$candidate"; break
+    fi
+  done
+  LAB_BASE_DIR="${LAB_BASE_DIR:-/root/storedog}"  # last-resort default
+fi
+
+# ── Auto-detect the lab .env file ────────────────────────────────────────────
+LAB_ENV=""
+for candidate in \
+    "${LAB_BASE_DIR}/.env" \
+    "/root/lab/.env" \
+    "/root/.env" \
+    "/home/lab/.env" \
+    "/workspace/.env"; do
+  if [ -f "$candidate" ]; then LAB_ENV="$candidate"; break; fi
+done
 
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║  Storedog — Feature Flags × RUM Workshop Lab Setup  ║"
@@ -23,11 +46,12 @@ echo ""
 
 # ── Step 1: Stop the base workshop stack ────────────────────────────────────
 if [ -f "${LAB_BASE_DIR}/docker-compose.dev.yml" ]; then
-  echo "[1/5] Stopping base storedog stack..."
+  echo "[1/5] Stopping base storedog stack at ${LAB_BASE_DIR}..."
   docker compose -f "${LAB_BASE_DIR}/docker-compose.dev.yml" down 2>/dev/null || true
   echo "      Stopped."
 else
-  echo "[1/5] Base storedog not found at ${LAB_BASE_DIR} — skipping stop."
+  echo "[1/5] Base storedog compose not found at ${LAB_BASE_DIR} — skipping stop."
+  echo "      (Set LAB_BASE_DIR=/path/to/storedog to override)"
 fi
 
 # ── Step 2: Clone or update the workshop branch ──────────────────────────────
@@ -45,13 +69,17 @@ echo "      Commit: $(git -C "$FF_DIR" log -1 --oneline)"
 
 # ── Step 3: Copy lab credentials ────────────────────────────────────────────
 echo "[3/5] Copying lab credentials..."
-if [ -f "${LAB_BASE_DIR}/.env" ]; then
-  cp "${LAB_BASE_DIR}/.env" "${FF_DIR}/.env"
-  echo "      Copied from ${LAB_BASE_DIR}/.env"
+if [ -n "$LAB_ENV" ]; then
+  cp "$LAB_ENV" "${FF_DIR}/.env"
+  echo "      Copied from ${LAB_ENV}"
+elif [ -f "${FF_DIR}/.env" ]; then
+  echo "      No source .env found — using existing ${FF_DIR}/.env"
 else
-  echo "      WARNING: ${LAB_BASE_DIR}/.env not found."
+  echo "      WARNING: could not find a lab .env file."
+  echo "      Searched: \${LAB_BASE_DIR}/.env, /root/lab/.env, /root/.env, /workspace/.env"
   echo "      Ensure ${FF_DIR}/.env contains DD_API_KEY, DD_APP_KEY,"
-  echo "      DD_APPLICATION_ID, DD_CLIENT_TOKEN, and STOREDOG_URL before continuing."
+  echo "      DD_APPLICATION_ID, DD_CLIENT_TOKEN, and STOREDOG_URL."
+  echo "      Set LAB_ENV=/path/to/.env to point directly to your env file."
   read -rp "      Press Enter once ${FF_DIR}/.env is filled in, or Ctrl-C to abort..."
 fi
 

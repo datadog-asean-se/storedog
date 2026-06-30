@@ -53,7 +53,6 @@ datadogRum.init({
   ],
   traceSampleRate: 100,
   allowUntrustedEvents: true,
-  enableExperimentalFeatures: ['feature_flags'],
   beforeSend: (event) => {
     if (
       event.type === 'error' &&
@@ -68,8 +67,10 @@ datadogRum.init({
 })
 
 // Initialise Datadog OpenFeature provider client-side only.
-// env:'dev' targets the 'dev' Datadog Feature Flag environment.
-// enableFlagEvaluationTracking wires flag variants into every RUM session automatically.
+// env:'dev' targets the Datadog Feature Flag environment whose queries include "dev".
+// enableRumFeatureFlagTracking  → adds @feature_flags.* attributes to every RUM session
+// enableFlagEvaluationTracking  → powers the real-time Client Evaluations chart on the flag page
+// targetingKey                  → required for % rollout to deterministically bucket users
 if (typeof window !== 'undefined') {
   const ffProvider = new DatadogProvider({
     clientToken: `${process.env.NEXT_PUBLIC_DD_CLIENT_TOKEN || ''}`,
@@ -79,8 +80,14 @@ if (typeof window !== 'undefined') {
     service: 'store-frontend',
     enableExposureLogging: true,
     enableFlagEvaluationTracking: true,
+    enableRumFeatureFlagTracking: true,
   })
-  OpenFeature.setProvider(ffProvider)
+  // Use the RUM session ID as the targetingKey so the 50/50 allocation
+  // deterministically buckets the same browser session into the same variant.
+  const sessionId =
+    datadogRum.getInternalContext?.()?.session_id ||
+    Math.random().toString(36).slice(2)
+  OpenFeature.setProvider(ffProvider, { targetingKey: sessionId })
 }
 
 const Noop: FC = ({ children }) => <>{children}</>

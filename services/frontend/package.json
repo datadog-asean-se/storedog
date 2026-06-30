@@ -16,6 +16,7 @@
   "dependencies": {
     "@datadog/browser-rum": "^6.19.0",
     "@datadog/openfeature-browser": "^1.2.3",
+    "@openfeature/core": "^1.9.2",
     "@openfeature/react-sdk": "^1.4.1",
     "@openfeature/web-sdk": "^1.9.0",
     "@radix-ui/react-dropdown-menu": "^0.1.6",

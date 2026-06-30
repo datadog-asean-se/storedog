@@ -82,21 +82,29 @@ fi
 echo "      OK (HTTP $FF_HTTP_CODE)"
 
 # ── Step 2: Resolve the flag environment ID ──────────────────────────────────
+# Response format: {"data":[{"id":"...","type":"environments","attributes":{"name":"...","is_production":bool,"queries":[...]}}]}
 echo "[2/5] Resolving flag environments..."
 api_get "GET environments" "${API}/environments"
 ENVS=$(cat "$FF_TMP" 2>/dev/null || true)
 
-# API returns JSON:API format {"data":[...]} — use .data[]
-ENV_ID=$(printf '%s' "$ENVS" | jq -r '[.data[]? | select(.is_production == false)] | first | .id // empty' 2>/dev/null || true)
+# Prefer the environment whose queries include "dev"; fall back to any non-production
+ENV_ID=$(printf '%s' "$ENVS" | jq -r '
+  [.data[]? | select(.attributes.queries[]? == "dev")] | first | .id // empty
+' 2>/dev/null || true)
 if [ -z "${ENV_ID:-}" ]; then
-  # Fallback: any environment
+  ENV_ID=$(printf '%s' "$ENVS" | jq -r '
+    [.data[]? | select(.attributes.is_production == false)] | first | .id // empty
+  ' 2>/dev/null || true)
+fi
+if [ -z "${ENV_ID:-}" ]; then
   ENV_ID=$(printf '%s' "$ENVS" | jq -r '.data[0]?.id // empty' 2>/dev/null || true)
 fi
 if [ -z "${ENV_ID:-}" ]; then
-  echo "      NOTE: No flag environments found (endpoint returned: ${ENVS:-(empty)})."
-  echo "      Will attempt to create the flag; environment will be resolved from flag detail."
+  echo "      NOTE: No flag environments found. Will resolve from flag detail after creation."
 else
-  ENV_NAME=$(printf '%s' "$ENVS" | jq -r --arg id "$ENV_ID" '.data[]? | select(.id == $id) | .name // empty' 2>/dev/null || true)
+  ENV_NAME=$(printf '%s' "$ENVS" | jq -r --arg id "$ENV_ID" '
+    .data[]? | select(.id == $id) | .attributes.name // empty
+  ' 2>/dev/null || true)
   echo "      Using environment: '${ENV_NAME:-unknown}' ($ENV_ID)"
 fi
 
@@ -119,17 +127,22 @@ else
   # ── Step 4a: Create the flag ───────────────────────────────────────────────
   echo "[4/5] Creating flag '$FLAG_KEY'..."
   FF_DATA_FILE=$(mktemp)
-  # Flat JSON body — the Feature Flags API does not use JSON:API wrapping for creation
+  # JSON:API format — type must be "feature-flags" (hyphenated, matching the URL path)
   cat > "$FF_DATA_FILE" <<JSON
 {
-  "key": "${FLAG_KEY}",
-  "name": "Product Card Frustration (Storedog workshop)",
-  "description": "Workshop demo: broken product thumbnails to show RUM Frustration Signals.",
-  "value_type": "BOOLEAN",
-  "variants": [
-    {"key": "control",     "name": "Control (good cards)",       "value": "false"},
-    {"key": "frustration", "name": "Frustration (broken cards)", "value": "true"}
-  ]
+  "data": {
+    "type": "feature-flags",
+    "attributes": {
+      "key": "${FLAG_KEY}",
+      "name": "Product Card Frustration (Storedog workshop)",
+      "description": "Workshop demo: broken product thumbnails to show RUM Frustration Signals.",
+      "value_type": "BOOLEAN",
+      "variants": [
+        {"key": "control",     "name": "Control (good cards)",       "value": "false"},
+        {"key": "frustration", "name": "Frustration (broken cards)", "value": "true"}
+      ]
+    }
+  }
 }
 JSON
   # Call directly (NOT inside $(...)) so FF_HTTP_CODE is set in the current shell
@@ -149,8 +162,8 @@ JSON
     exit 1
   fi
 
-  # API returns flat object: {"id":"...","key":"...","variants":[...]}
-  FLAG_ID=$(jq -r '.id // .data.id // empty' "$FF_TMP" 2>/dev/null || true)
+  # Response: {"data":{"id":"...","type":"feature-flags","attributes":{...}}}
+  FLAG_ID=$(jq -r '.data.id // empty' "$FF_TMP" 2>/dev/null || true)
   if [ -z "${FLAG_ID:-}" ]; then
     echo "ERROR: Could not extract flag ID from creation response:" >&2
     cat "$FF_TMP" >&2; exit 1
@@ -162,30 +175,30 @@ fi
 api_get "GET flag detail" "${API}/${FLAG_ID}"
 FLAG_DETAIL=$(cat "$FF_TMP" 2>/dev/null || true)
 
+# Response: {"data":{"attributes":{"variants":[...],"feature_flag_environments":[...]}}}
 CONTROL_VID=$(printf '%s' "$FLAG_DETAIL" | jq -r '
-  (.variants // .data.attributes.variants // [])[]?
-  | select(.key=="control") | .id // empty
+  .data.attributes.variants[]? | select(.key=="control") | .id // empty
 ' 2>/dev/null | head -1 || true)
 
 FRUSTRATION_VID=$(printf '%s' "$FLAG_DETAIL" | jq -r '
-  (.variants // .data.attributes.variants // [])[]?
-  | select(.key=="frustration") | .id // empty
+  .data.attributes.variants[]? | select(.key=="frustration") | .id // empty
 ' 2>/dev/null | head -1 || true)
 
 if [ -z "${ENV_ID:-}" ]; then
-  # Try flat format: .feature_flag_environments[] | .environment_id
+  # Prefer environment whose queries include "dev"
   ENV_ID=$(printf '%s' "$FLAG_DETAIL" | jq -r '
-    (.feature_flag_environments // .data.attributes.feature_flag_environments // [])[]?
-    | select(.is_production == false) | .environment_id // empty
+    [.data.attributes.feature_flag_environments[]?
+     | select(.environment_queries[]? == "dev")] | first | .environment_id // empty
   ' 2>/dev/null | head -1 || true)
   if [ -z "${ENV_ID:-}" ]; then
     ENV_ID=$(printf '%s' "$FLAG_DETAIL" | jq -r '
-      (.feature_flag_environments // .data.attributes.feature_flag_environments // [])[0]?.environment_id // empty
-    ' 2>/dev/null || true)
+      [.data.attributes.feature_flag_environments[]?
+       | select(.is_production == false)] | first | .environment_id // empty
+    ' 2>/dev/null | head -1 || true)
   fi
   if [ -n "${ENV_ID:-}" ]; then
     ENV_NAME=$(printf '%s' "$FLAG_DETAIL" | jq -r --arg id "$ENV_ID" '
-      (.feature_flag_environments // .data.attributes.feature_flag_environments // [])[]?
+      .data.attributes.feature_flag_environments[]?
       | select(.environment_id == $id) | .environment_name // empty
     ' 2>/dev/null || true)
     echo "      Resolved environment from flag: '${ENV_NAME:-unknown}' ($ENV_ID)"

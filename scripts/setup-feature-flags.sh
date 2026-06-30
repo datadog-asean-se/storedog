@@ -15,12 +15,13 @@ for arg in "$@"; do [[ "$arg" == "--debug" || "$arg" == "-d" ]] && DEBUG=1; done
 [[ "${DEBUG_FF:-0}" == "1" ]] && DEBUG=1  # also honour env var DEBUG_FF=1
 
 dbg() {
-  # dbg <label> <json_or_string>  — prints only in debug mode, pretty-printed if JSON
+  # dbg <label> <json_or_string>  — prints only in debug mode, always to stderr
+  # Must use stderr so output is visible even when the caller is inside $(...) capture
   [ "$DEBUG" -eq 0 ] && return
   local label="$1"; shift
-  echo "  [DEBUG] ${label}:"
-  echo "$*" | jq '.' 2>/dev/null || echo "$*"
-  echo ""
+  echo "  [DEBUG] ${label}:" >&2
+  echo "$*" | jq '.' 2>/dev/null >&2 || echo "$*" >&2
+  echo "" >&2
 }
 
 curl_dbg() {

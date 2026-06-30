@@ -13,11 +13,12 @@
 By the end of this lab you will be able to:
 
 - Understand what **OpenFeature** is and why it is the industry standard for feature flag SDKs
-- Create a **Datadog Feature Flag** with two variants and a progressive rollout
+- Create a **Datadog Feature Flag** with two variants and enable it in a flag environment
 - Wire the flag into a **Next.js** app using the Datadog OpenFeature browser provider
 - See how flag variant data **automatically appears in every RUM session** — no manual instrumentation
-- Use the **RUM Explorer** to compare user experience metrics between flag variants
-- Understand how **Guardrail Metrics** can automatically roll back a bad release
+- Use the **RUM Explorer** and **Session Replay** to observe the real user impact of an enabled flag
+- **Disable** a flag to instantly roll back a bad experience without a new deployment
+- Understand how **Guardrail Metrics** can automate this rollback
 
 ---
 
@@ -102,19 +103,21 @@ The script will:
 > ╔══════════════════════════════════════════════════════╗
 > ║  Storedog — Feature Flags × RUM Workshop Lab Setup  ║
 > ╚══════════════════════════════════════════════════════╝
-> [1/5] Stopping base storedog stack... Stopped.
+> [1/5] Base storedog compose not found at /root/lab — skipping stop.
 > [2/5] Setting up workshop repo at /root/storedog-ff...
-> [3/5] Copying lab credentials...
+> [3/5] Copying lab credentials...       Copied from /root/lab/.env
 > [4/5] Creating Datadog Feature Flag in your lab org...
 >       === Datadog Feature Flags — Workshop Setup ===
->       [1/5] Validating credentials... OK
->       [2/5] Resolving flag environments... Using environment: 'dev'
+>       [1/5] Validating credentials... OK (HTTP 200)
+>       [2/5] Resolving flag environments... Using environment: 'Development'
 >       [3/5] Checking if 'product-card-frustration' already exists...
->       [4/5] Creating flag 'product-card-frustration'... Created
->       [5/5] Setting up 50/50 allocation... Allocation created.
+>       [4/5] Creating flag 'product-card-frustration'... Created (id=...)
+>       [5/5] Setting up allocation... Enabled (HTTP 200).
 >       === Done ===
 > [5/5] Starting Feature Flags × RUM storedog stack...
-> ✅ All done!
+> ╔═══════════════════════════════════════════════════════════════╗
+> ║  All done! Your Feature Flags × RUM lab is running.          ║
+> ╚═══════════════════════════════════════════════════════════════╝
 > ```
 
 ### Step 1.2 — Verify the stack is running
@@ -217,18 +220,20 @@ Because the evaluation happens in the browser via the Datadog OpenFeature provid
 1. In Datadog, navigate to **Digital Experience → Feature Flags**
 2. Find `product-card-frustration`
 3. Notice it has two variants: `control` (normal cards) and `frustration` (broken cards)
-4. It is currently **enabled** in the `dev` environment with a 50/50 allocation
+4. It is currently **ENABLED** in the `Development` environment
 
 ### Step 3.2 — Examine the flag page
 
 Click into the flag. Observe:
 
-- **Environments tab** — the flag is in the `dev` environment (where Storedog sends data)
+- **Environments tab** — the flag is **ENABLED** in the `Development` environment (where Storedog sends data with `env:'dev'`)
 - **Variants** — `control` returns `false`, `frustration` returns `true`
-- **Targeting Rules** — 50/50 split across all users (no targeting filter)
-- **Real-time Metrics** — after a few minutes of Puppeteer traffic, you will see exposure counts per variant and performance metrics
+- **"If no rules are met → Frustration (broken cards)"** — this is the default: when the flag is enabled with no targeting rules, **100% of users receive the frustration variant** (broken product thumbnails)
+- **Real-time Metrics** — after a few minutes of Puppeteer traffic, you will see exposure counts and RUM performance metrics appear on this page
 
-> **Instructor note:** This is the same view that shows error rate, latency, and RUM signals broken down by variant — the "flag page as a mini-dashboard" story.
+> **Why 100% frustration?** The setup script creates the flag with `frustration` as the default variant. This is intentional for the workshop demo: the flag acts as a simple on/off switch. Flag **ENABLED** = all users see broken cards. Flag **DISABLED** = OpenFeature returns the SDK default (`false`) = all users see good cards.
+
+> **Instructor note:** This page is the "flag as a dashboard" story — you can see real-time RUM and APM signals correlated directly to the flag state without switching tools.
 
 ---
 
@@ -239,7 +244,7 @@ Click into the flag. Observe:
 1. Navigate to **Digital Experience → RUM → Sessions**
 2. Wait 2–3 minutes for Puppeteer traffic to generate sessions
 
-### Step 4.2 — Filter by flag variant
+### Step 4.2 — Filter sessions by flag variant
 
 In the search bar, type:
 
@@ -247,71 +252,87 @@ In the search bar, type:
 @feature_flags.product-card-frustration:frustration
 ```
 
-This filters to sessions where the user received the broken product cards variant. Compare to:
+Since the flag is enabled with 100% `frustration` as the default, all sessions from this app will have `@feature_flags.product-card-frustration: frustration` attached. Every single one of these users is experiencing the broken product cards.
 
-```
-@feature_flags.product-card-frustration:control
-```
+**What to look for in these sessions:**
+- Unusually high **Rage Clicks** and **Dead Clicks** — users clicking the broken thumbnails
+- High **Frustration Signals** count
+- Short session duration — users giving up
 
-**What to look for:**
-
-| Metric | `control` variant | `frustration` variant |
-|---|---|---|
-| Frustration Signals | Low | High (rage clicks on broken thumbnails) |
-| JS error rate | Normal | May be elevated |
-| LCP (Largest Contentful Paint) | Normal | Similar (it's a layout change, not a perf change) |
+> **Key insight:** You didn't write any tracking code. The flag variant appeared in RUM automatically because `enableFlagEvaluationTracking: true` was set in the DatadogProvider. Every evaluation is wired into every session.
 
 ### Step 4.3 — Session Replay with flag context
 
-1. Click on any session from the `frustration` variant
+1. Click on any session from the list
 2. Open **Session Replay**
 3. Watch a user click on the product thumbnails — they are not linked, generating dead clicks
-4. In the session attributes panel on the right, find the **Feature Flags** section
-   - `product-card-frustration: frustration` — the variant that was active during this session
+4. In the session attributes panel on the right, find the **Feature Flags** section:
+   - `product-card-frustration: frustration` — you can see exactly which flag variant was active during this session
 
-This is the key insight: you don't need to look in a separate tool to correlate the flag to the problem. The flag variant is **part of the session**, visible in the same replay.
+This is the money shot: flag variant, user behaviour, and performance metrics — all in the same view, no tool-switching required.
 
-### Step 4.4 — Frustration Signals in RUM Explorer
+### Step 4.4 — Frustration Signals
 
 1. Navigate to **RUM → Frustration Signals**
-2. Filter by `@feature_flags.product-card-frustration:frustration`
-3. Observe the spike of **Dead Clicks** and **Rage Clicks** — these are the users hitting the broken product thumbnails
+2. You should see a cluster of **Dead Clicks** and **Rage Clicks**
+3. Filter by `@feature_flags.product-card-frustration:frustration` to confirm they all come from flag-exposed sessions
+
+These are the users hitting the broken product thumbnails. In a real incident, this signal — correlated to the flag — would tell you exactly what to disable.
 
 ---
 
-## Part 5 — Control the Rollout (10 minutes)
+## Part 5 — Roll Back with One Click (10 minutes)
 
-### Step 5.1 — Roll back the flag
+### Step 5.1 — Disable the flag
+
+You've seen the broken experience in RUM. Now fix it — without any code change or deployment.
 
 In the Datadog Feature Flags UI:
 
 1. Open `product-card-frustration`
-2. Click **Edit Targeting Rules** in the `dev` environment
-3. Change the `frustration` variant weight to **0%** (or disable the flag entirely)
-4. Save
+2. Click the **Development** environment tab
+3. Click **Disable** (the toggle next to "ENABLED")
+4. Confirm
 
-Wait 1–2 minutes. Reload the Storedog products page (`/products`). Product thumbnails should now link correctly — the `control` variant is serving to 100% of users.
+**What just happened:**
+- The DatadogProvider in Storedog's browser fetches the latest flag config every few minutes
+- Within 1–2 minutes, it receives the disabled state
+- `useBooleanFlagValue('product-card-frustration', false)` now returns the SDK default: `false`
+- `false` → `control` variant → normal product cards with working thumbnails
+- No deployment. No restart. No code change.
 
-Check the RUM Explorer: Frustration Signals should drop to zero for new sessions.
+Wait 2 minutes, reload `/products`. Product thumbnails now link to product pages correctly.
 
-### Step 5.2 — Gradual rollout (instructor demo)
+Check the RUM Explorer: new sessions will no longer show `@feature_flags.product-card-frustration:frustration`. Frustration Signals drop to zero.
+
+### Step 5.2 — Re-enable the flag
+
+1. In the Feature Flags UI, click **Enable** on the Development environment
+2. Wait 1–2 minutes
+3. Reload `/products` — broken thumbnails are back
+4. Check RUM — Frustration Signals return
+
+This on/off toggle is the core of the demo. In production, you would use a **targeting rule with a percentage** (e.g., expose `frustration` to 10% of users first, then 25%...) instead of a 100% default. But the principle is the same: the flag is the rollback switch, and RUM is what tells you whether to pull it.
+
+### Step 5.3 — Guardrail Metrics (instructor demo, optional)
 
 > This step is best done as a live demonstration. Students watch; the instructor drives.
 
-The instructor sets up a **progressive rollout**:
+For a more advanced scenario, the instructor can configure an automated guardrail:
 
-1. Set `frustration` to 10%
-2. In the **Metrics** tab on the flag page, attach a guardrail: `[RUM] Error count` → action: **ABORT**
-3. Click **Start Rollout**
+1. In the flag page, click **Edit Targeting Rules** in the Development environment
+2. Change the default variant to `control` (safe state when no rules match)
+3. Add a targeting rule: **100% of users → `frustration`** variant
+4. In the **Metrics** section, click **Add Guardrail**:
+   - Metric: `[RUM] Error count` or `[RUM] Long task count`
+   - Action: **ABORT**
+5. Save and **Enable** the flag
 
-Increase to 25%, 50%... as Puppeteer generates traffic, the error/frustration signal spikes.
+Now with the targeting rule active, Puppeteer traffic generates RUM data. When the guardrail metric crosses its threshold:
+- Datadog **automatically disables** the targeting rule (rolls back to `control`)
+- No engineer needed to watch a dashboard
 
-**When the guardrail fires:**
-- Datadog automatically sets the flag back to 0% exposure
-- A notification fires (Slack / email)
-- No engineer needed to babysit the release
-
-**The key message:** The same RUM data you used in the main lab to *diagnose* a problem is now being used to *prevent* the problem from reaching more users.
+**The key message:** The same RUM data you used in the main lab to *diagnose* a problem is now being used to *automatically prevent* the problem from reaching more users — without anyone having to watch a dashboard overnight.
 
 ---
 

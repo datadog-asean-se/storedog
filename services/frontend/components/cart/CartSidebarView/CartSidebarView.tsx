@@ -85,7 +85,7 @@ const CartSidebarView: FC = () => {
                 <CartItem
                   key={item.id}
                   item={item}
-                  currencyCode={cart?.currency.code}
+                  currencyCode={cart?.currency?.code ?? 'USD'}
                 />
               ))}
             </ul>

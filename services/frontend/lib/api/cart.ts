@@ -16,7 +16,7 @@ export const formatCart = (cartApi: any): Cart => {
   const cart: Cart = {
     createdAt: cartApi.data.attributes.created_at,
     currency: {
-      code: cartApi.data.attributes.currency,
+      code: cartApi.data.attributes.currency || 'USD',
     },
     customerId: cartApi.data.attributes.token,
     discounts: [],

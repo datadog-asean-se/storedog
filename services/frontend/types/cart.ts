@@ -24,7 +24,7 @@ export type CartLineItem = {
 
 export type Cart = {
   createdAt: string
-  currency: {
+  currency?: {
     code: string
   }
   customerId: string

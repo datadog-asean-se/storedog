@@ -14,9 +14,9 @@ export const getProducts = async (
       options.taxons !== undefined && options.taxons !== null
         ? `&filter[taxons]=${encodeURIComponent(options.taxons)}`
         : ''
-    const url = `${SPREE_URL_SERVERSIDE}/storefront/products?include=${encodeURIComponent(
+    const url = `${SPREE_URL_SERVERSIDE}/storefront/products?include=${
       options.include
-    )}&page=${options.page || 1}&per_page=${
+    }&page=${options.page || 1}&per_page=${
       options.per_page || 25
     }${taxonsFilter}`
 
@@ -28,7 +28,8 @@ export const getProducts = async (
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const productsApi: any = await res.json()
@@ -75,8 +76,8 @@ export const getProducts = async (
 
     return products
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getProducts]', error)
+    throw error
   }
 }
 
@@ -84,7 +85,7 @@ export const getProduct = async (options: any): Promise<Product | any> => {
   try {
     const url = `${SPREE_URL_SERVERSIDE}/storefront/products/${
       options.id
-    }?include=${encodeURIComponent(options.include)}`
+    }?include=${options.include}`
 
     const res = await fetch(url, {
       method: 'GET',
@@ -94,7 +95,8 @@ export const getProduct = async (options: any): Promise<Product | any> => {
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const productApi: any = await res.json()
@@ -203,7 +205,7 @@ export const getProduct = async (options: any): Promise<Product | any> => {
 
     return product
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getProduct]', error)
+    throw error
   }
 }

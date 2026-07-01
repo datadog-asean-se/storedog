@@ -9,7 +9,7 @@ export default async function handler(
   try {
     const options = {
       include:
-        req.query?.includes || 'default_variant,images,primary_variant,taxons',
+        req.query?.includes || 'default_variant,images,taxons',
       page: req.query.page || 1,
       per_page: req.query.per_page || 25,
       ...req.query,

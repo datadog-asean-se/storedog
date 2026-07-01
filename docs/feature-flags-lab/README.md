@@ -55,10 +55,14 @@ git clone --branch workshop/featureflags-rum --single-branch --depth 1 \
 bash /root/storedog-ff/storedog-ff-lab.sh
 ```
 
-> **Already have `/root/storedog-ff`?** Pull the latest changes instead:
+> **Update / reset an existing clone:**
 > ```bash
+> # Update to the latest workshop code (run on the lab host):
 > git -C /root/storedog-ff pull origin workshop/featureflags-rum
-> bash /root/storedog-ff/storedog-ff-lab.sh
+> docker restart storedog-ff-frontend-1
+>
+> # Recreate / update all flags in Datadog:
+> cd /root/storedog-ff && bash scripts/setup-feature-flags.sh
 > ```
 
 ---
@@ -78,13 +82,7 @@ bash /root/storedog-ff/storedog-ff-lab.sh
 
 ### Step 1.1 — Run the quick-start script
 
-From the lab host terminal (`/root`), run a single command to swap the base Storedog stack for the Feature Flags–enabled version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/datadog-asean-se/storedog/workshop/featureflags-rum/storedog-ff-lab.sh | bash
-```
-
-Or if you already cloned the repo:
+From the lab host terminal (`/root`), run:
 
 ```bash
 bash /root/storedog-ff/storedog-ff-lab.sh
@@ -92,11 +90,10 @@ bash /root/storedog-ff/storedog-ff-lab.sh
 
 The script will:
 1. Stop the running base Storedog stack
-2. Clone the `workshop/featureflags-rum` branch to `/root/storedog-ff`
-3. Copy your existing lab credentials (`.env`) into the new directory
-4. Map `DD_APPLICATION_ID` → `NEXT_PUBLIC_DD_APPLICATION_ID` (required by Next.js)
-5. Run `setup-feature-flags.sh` to create the flag in your Datadog org
-6. Start the Feature Flags–enabled stack
+2. Copy your existing lab credentials (`.env`) into the new directory
+3. Map `DD_APPLICATION_ID` → `NEXT_PUBLIC_DD_APPLICATION_ID` (required by Next.js)
+4. Run `setup-feature-flags.sh` to create **all 4 flags** in your Datadog org
+5. Start the Feature Flags–enabled stack
 
 > **Expected output:**
 > ```
@@ -106,13 +103,15 @@ The script will:
 > [1/5] Base storedog compose not found at /root/lab — skipping stop.
 > [2/5] Setting up workshop repo at /root/storedog-ff...
 > [3/5] Copying lab credentials...       Copied from /root/lab/.env
-> [4/5] Creating Datadog Feature Flag in your lab org...
+> [4/5] Creating Datadog Feature Flags in your lab org...
 >       === Datadog Feature Flags — Workshop Setup ===
 >       [1/5] Validating credentials... OK (HTTP 200)
 >       [2/5] Resolving flag environments... Using environment: 'Development'
->       [3/5] Checking if 'product-card-frustration' already exists...
->       [4/5] Creating flag 'product-card-frustration'... Created (id=...)
->       [5/5] Setting up allocation... Enabled (HTTP 200).
+>       [3/5] Creating flag 'product-card-frustration'... Created (id=...)
+>       [3/5] Creating flag 'promo-banner-message'... Created (id=...)
+>       [3/5] Creating flag 'product-grid-columns'... Created (id=...)
+>       [3/5] Creating flag 'homepage-hero-style'... Created (id=...)
+>       [4/5] Setting up allocations... Enabled (HTTP 200).
 >       === Done ===
 > [5/5] Starting Feature Flags × RUM storedog stack...
 > ╔═══════════════════════════════════════════════════════════════╗
@@ -211,26 +210,56 @@ Because the evaluation happens in the browser via the Datadog OpenFeature provid
 - Which variant the user received (`control` or `frustration`)
 - This data is attached to every RUM View, Action, and Error in that session
 
+### 2.4 — Additional demo flags
+
+The workshop branch ships **three more flags** alongside `product-card-frustration`, each demonstrating a different OpenFeature value type:
+
+```typescript
+// String flag — promo banner text (pages/index.tsx)
+const promoMessage = useStringFlagValue('promo-banner-message', 'GET FREE SHIPPING WITH CODE SAGE')
+
+// Number flag — product grid columns (components/product/ProductList.tsx)
+const gridColumns = useNumberFlagValue('product-grid-columns', 3)
+
+// Object/JSON flag — hero banner style (pages/index.tsx)
+const heroStyle = useObjectFlagValue('homepage-hero-style', { bgColor: '#632CA6', textColor: '#FFFFFF', badge: '' })
+```
+
+| Flag key | Type | Default / control | Flag-on variant | Where you see it |
+|---|---|---|---|---|
+| `promo-banner-message` | String | Standard shipping copy | `"summer-sale"` promo text | Homepage promo banner |
+| `product-grid-columns` | Number | 3 columns | 4 columns | `/products` grid layout |
+| `homepage-hero-style` | JSON | Datadog purple, no badge | Orange background + "NEW" badge | Homepage hero banner |
+
+These flags fire automatically once the setup script creates them — you can toggle each one from the Datadog UI to see the visual change in seconds.
+
 ---
 
-## Part 3 — Explore the Flag in Datadog (5 minutes)
+## Part 3 — Explore the Flags in Datadog (5 minutes)
 
-### Step 3.1 — Find the flag
+### Step 3.1 — Find the flags
 
 1. In Datadog, navigate to **Digital Experience → Feature Flags**
-2. Find `product-card-frustration`
-3. Notice it has two variants: `control` (normal cards) and `frustration` (broken cards)
-4. It is currently **ENABLED** in the `Development` environment
+2. You will see all **4 flags** created by the setup script:
 
-### Step 3.2 — Examine the flag page
+| Flag | Type | Variants | Visual effect |
+|---|---|---|---|
+| `product-card-frustration` | Boolean | `control` / `frustration` | Broken product thumbnails (no image links) on `/products` |
+| `promo-banner-message` | String | `control` / `summer-sale` | Promo banner text on the homepage |
+| `product-grid-columns` | Number | `3` / `4` | Product grid column count on `/products` |
+| `homepage-hero-style` | JSON | purple/no-badge / orange/"NEW" | Hero banner colour + badge on the homepage |
 
-Click into the flag. Observe:
+### Step 3.2 — Examine a flag page
+
+Click into `product-card-frustration`. Observe:
 
 - **Environments tab** — the flag is **ENABLED** in the `Development` environment (where Storedog sends data with `env:'dev'`)
 - **Variants** — `control` returns `false`, `frustration` returns `true`
 - **Targeting Rule: "Workshop 50/50" — 50% Control / 50% Frustration** — the setup script creates this rule automatically so half of Puppeteer sessions get each variant
 - **"If no rules are met → Frustration (broken cards)"** — the fallback default if no targeting rule matches
 - **Real-time Metrics** — after a few minutes of Puppeteer traffic, you will see exposure counts per variant and RUM performance metrics appear on this page
+
+The same structure applies to all 4 flags — each has a `control` and an "on" variant, and each is enabled in the `Development` environment.
 
 > **Instructor note:** This page is the "flag as a dashboard" story — real-time RUM signals split by variant, all in one place without switching tools.
 
@@ -245,13 +274,21 @@ Click into the flag. Observe:
 
 ### Step 4.2 — Filter sessions by flag variant
 
-In the search bar, filter to the frustration cohort:
+Each of the 4 flags produces its own RUM attribute. Try these filters:
+
+```
+@feature_flags.product-card-frustration:frustration
+@feature_flags.promo-banner-message:summer-sale
+@feature_flags.product-grid-columns:4
+```
+
+For the main experiment, compare the broken-thumbnail cohort against the control:
 
 ```
 @feature_flags.product-card-frustration:frustration
 ```
 
-Then compare to the control cohort:
+vs.
 
 ```
 @feature_flags.product-card-frustration:control
@@ -311,6 +348,8 @@ Wait 2 minutes, reload `/products`. Product thumbnails now link to product pages
 
 Check the RUM Explorer: new sessions will no longer show `@feature_flags.product-card-frustration:frustration`. Frustration Signals drop to zero.
 
+> **This works for all 4 flags.** Toggling any flag back to its `control` variant (or disabling it entirely so the SDK default kicks in) instantly restores the original experience — no deployment required. Try it with `promo-banner-message`, `product-grid-columns`, or `homepage-hero-style` to see each visual change reverse in real time.
+
 ### Step 5.2 — Re-enable the flag
 
 1. In the Feature Flags UI, click **Enable** on the Development environment
@@ -359,9 +398,9 @@ git diff origin/main -- \
 ```
 
 **The minimal change surface:**
-- **4 files modified** — `package.json`, `_app.tsx`, `products/index.tsx`, `ProductList.tsx`
-- **~30 lines of new application code**
-- The other 100+ lines are the two new helper scripts (`setup-feature-flags.sh`, `storedog-ff-lab.sh`)
+- **4 files modified** — `package.json`, `_app.tsx`, `pages/index.tsx`, `ProductList.tsx`
+- **~50 lines of new application code** (4 flag hooks across 2 files)
+- The other 150+ lines are the two new helper scripts (`setup-feature-flags.sh`, `storedog-ff-lab.sh`)
 
 This is the practical lesson: adding OpenFeature + Datadog to an existing Next.js app is a small, contained change. The hard part is the flag *strategy* — what to flag, what guardrails to attach, and what rollback looks like.
 
@@ -391,9 +430,9 @@ The flag in Datadog will remain in your lab org. You can archive it from the Fea
 |---|---|
 | `services/frontend/package.json` | Added `@datadog/openfeature-browser`, `@openfeature/web-sdk`, `@openfeature/react-sdk` |
 | `services/frontend/pages/_app.tsx` | Added `DatadogProvider` init with `enableFlagEvaluationTracking: true`; wrapped app with `<OpenFeatureProvider>` |
-| `services/frontend/pages/products/index.tsx` | Removed server-side `codeStash` call for `product-card-frustration` |
-| `services/frontend/components/product/ProductList.tsx` | Added `useBooleanFlagValue('product-card-frustration', false)` — client-side flag drives card variant |
-| `scripts/setup-feature-flags.sh` | New: creates the flag in the student's Datadog org via REST API. Run with `--debug` for verbose output. |
+| `services/frontend/pages/products/index.tsx` | Removed server-side `codeStash` call; added `useStringFlagValue('promo-banner-message', …)` and `useObjectFlagValue('homepage-hero-style', …)` |
+| `services/frontend/components/product/ProductList.tsx` | Added `useBooleanFlagValue('product-card-frustration', false)` and `useNumberFlagValue('product-grid-columns', 3)` |
+| `scripts/setup-feature-flags.sh` | New: creates all 4 flags in the student's Datadog org via REST API. Run with `--debug` for verbose output. |
 | `storedog-ff-lab.sh` | New: one-shot student setup script |
 
 ### Architecture flow
@@ -407,16 +446,27 @@ Browser
   │     │ clientToken / applicationId / env:'dev'
   │     │ enableFlagEvaluationTracking: true
   │     ↓
-  │   Datadog Feature Flags backend (fetches flag config)
+  │   Datadog Feature Flags backend (fetches config for all 4 flags)
   │
   ├─ useBooleanFlagValue('product-card-frustration', false)
-  │     │ returns: true  → ProductCard-v2 (broken thumbnails)
-  │     │          false → ProductCard    (normal thumbnails)
-  │     ↓
-  │   flag evaluation auto-attached to RUM session
+  │     → true  = ProductCard-v2 (broken thumbnails)  | false = normal cards
+  │
+  ├─ useStringFlagValue('promo-banner-message', 'GET FREE SHIPPING…')
+  │     → 'summer-sale' = summer promo text           | default = standard text
+  │
+  ├─ useNumberFlagValue('product-grid-columns', 3)
+  │     → 4 = 4-column grid                           | 3 = default 3-column grid
+  │
+  ├─ useObjectFlagValue('homepage-hero-style', { bgColor: '#632CA6', … })
+  │     → { bgColor: '#FF5722', badge: 'NEW' }        | default = Datadog purple
+  │
+  │   Every evaluation is auto-attached to the RUM session
   │
   └─ RUM session contains:
-        @feature_flags.product-card-frustration = "control" | "frustration"
+        @feature_flags.product-card-frustration  = "control" | "frustration"
+        @feature_flags.promo-banner-message      = "control" | "summer-sale"
+        @feature_flags.product-grid-columns      = "3"       | "4"
+        @feature_flags.homepage-hero-style       = "control" | "orange-new"
 ```
 
 ### Environment variable mapping
@@ -438,6 +488,10 @@ The lab's `.env` uses unprefixed names (`DD_APPLICATION_ID`, `DD_CLIENT_TOKEN`).
 | **OpenFeature** | CNCF open standard for feature flag SDKs — vendor-neutral, like OpenTelemetry for flags |
 | **DatadogProvider** | Datadog's OpenFeature browser provider — connects OpenFeature to Datadog's flag backend |
 | **`enableFlagEvaluationTracking`** | Auto-attaches flag variant to every RUM session — zero extra code needed |
+| **`useBooleanFlagValue`** | OpenFeature React hook for Boolean flags — e.g. `useBooleanFlagValue('product-card-frustration', false)` |
+| **`useStringFlagValue`** | OpenFeature React hook for String flags — e.g. `useStringFlagValue('promo-banner-message', 'default text')` |
+| **`useNumberFlagValue`** | OpenFeature React hook for Number flags — e.g. `useNumberFlagValue('product-grid-columns', 3)` |
+| **`useObjectFlagValue`** | OpenFeature React hook for JSON/Object flags — e.g. `useObjectFlagValue('homepage-hero-style', { bgColor: '…' })` |
 | **Guardrail Metric** | A RUM/APM metric that auto-pauses or aborts a rollout when it degrades |
 | **Progressive Rollout** | Staged traffic exposure (10% → 25% → 50% → 100%) with automatic advancement when guardrails are healthy |
 | **Variant** | The specific value a user receives when a flag is evaluated (`control` or `frustration` in this lab) |

@@ -10,11 +10,15 @@ export const getProducts = async (
   options: any = {}
 ): Promise<Product[] | any> => {
   try {
+    const taxonsFilter =
+      options.taxons !== undefined && options.taxons !== null
+        ? `&filter[taxons]=${encodeURIComponent(options.taxons)}`
+        : ''
     const url = `${SPREE_URL_SERVERSIDE}/storefront/products?include=${encodeURIComponent(
       options.include
     )}&page=${options.page || 1}&per_page=${
       options.per_page || 25
-    }&filter[taxons]=${encodeURIComponent(options.taxons)}`
+    }${taxonsFilter}`
 
     const res = await fetch(url, {
       method: 'GET',

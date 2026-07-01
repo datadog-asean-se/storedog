@@ -11,12 +11,13 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
     ? `${process.env.NEXT_PUBLIC_FRONTEND_API_ROUTE}/api`
     : 'http://localhost:3000/api'
 
-  const products: Product[] = await fetch(`${baseUrl}/products`).then((res) =>
+  const productsRaw = await fetch(`${baseUrl}/products`).then((res) =>
     res.json()
   )
-  const pages: Page[] = await fetch(`${baseUrl}/pages`).then((res) =>
-    res.json()
-  )
+  const products: Product[] = Array.isArray(productsRaw) ? productsRaw : []
+
+  const pagesRaw = await fetch(`${baseUrl}/pages`).then((res) => res.json())
+  const pages: Page[] = Array.isArray(pagesRaw) ? pagesRaw : []
 
   const taxons = await fetch(`${baseUrl}/taxonomies`).then((res) => res.json())
 

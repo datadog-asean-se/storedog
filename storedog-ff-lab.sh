@@ -138,12 +138,14 @@ WORKSHOP_COMPOSE="docker-compose.workshop.yml"
 DEV_COMPOSE="docker-compose.dev.yml"
 
 echo "      Pulling pre-built workshop images (much faster than building)..."
-if docker compose -f "$WORKSHOP_COMPOSE" pull --quiet 2>/dev/null; then
-  echo "      Pull successful — using pre-built images."
+# docker-compose.workshop.yml uses the pre-built workshop frontend image
+# and the same ECR images already cached from the lab's standard stack.
+if docker compose -f "$WORKSHOP_COMPOSE" pull 2>&1 | grep -v "^#\|Pulling\|Pulled\|Pull complete\|Digest\|Status"; then
+  echo "      Pull complete — starting workshop stack..."
   docker compose -f "$WORKSHOP_COMPOSE" up -d
 else
-  echo "      Pre-built image not available yet — building from source (this takes ~5 min)."
-  echo "      Tip: the CI workflow will publish the image after the next push to the branch."
+  echo "      Pull failed — trying source build fallback (this takes ~5 min)..."
+  echo "      Tip: the GitHub Actions CI publishes the image on each push to the branch."
   docker compose -f "$DEV_COMPOSE" up -d --build
 fi
 

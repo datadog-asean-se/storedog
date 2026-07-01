@@ -132,30 +132,24 @@ bash scripts/setup-feature-flags.sh
 echo "[5/5] Starting Feature Flags × RUM storedog stack..."
 cd "$FF_DIR"
 
-# Use the pre-built workshop compose if the frontend image is already published;
-# fall back to the dev compose (which builds from source) if pull fails.
-WORKSHOP_COMPOSE="docker-compose.workshop.yml"
-DEV_COMPOSE="docker-compose.dev.yml"
+# Always use docker-compose.dev.yml — it mounts the source from disk so
+# code fixes take effect without rebuilding the image. The workshop compose
+# (docker-compose.workshop.yml) requires the GHCR frontend image to be public.
+COMPOSE_FILE="docker-compose.dev.yml"
 
-echo "      Pulling pre-built workshop images (much faster than building)..."
-# docker-compose.workshop.yml uses the pre-built workshop frontend image
-# and the same ECR images already cached from the lab's standard stack.
-if docker compose -f "$WORKSHOP_COMPOSE" pull 2>&1 | grep -v "^#\|Pulling\|Pulled\|Pull complete\|Digest\|Status"; then
-  echo "      Pull complete — starting workshop stack..."
-  docker compose -f "$WORKSHOP_COMPOSE" up -d
-else
-  echo "      Pull failed — trying source build fallback (this takes ~5 min)..."
-  echo "      Tip: the GitHub Actions CI publishes the image on each push to the branch."
-  docker compose -f "$DEV_COMPOSE" up -d --build
-fi
+echo "      Building and starting workshop stack from source..."
+docker compose -f "$COMPOSE_FILE" up -d --build
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
 echo "║  All done! Your Feature Flags × RUM lab is running.          ║"
 echo "║                                                               ║"
-echo "║  App:          http://localhost (or your lab URL)             ║"
-echo "║  Products:     /products  — flag switches card variant        ║"
-echo "║  RUM Explorer: Filter @feature_flags.product-card-frustration ║"
+echo "║  App:          http://localhost (or your Instruqt lab URL)    ║"
+echo "║  Homepage:     /     — promo banner + hero style flags        ║"
+echo "║  Products:     /products  — card frustration + grid columns   ║"
+echo "║  RUM Explorer: Filter @feature_flags.*                        ║"
 echo "║                                                               ║"
-echo "║  To stop:  docker compose -f ${FF_DIR}/docker-compose.dev.yml down  ║"
+echo "║  To update:  git -C ${FF_DIR} pull origin workshop/featureflags-rum ║"
+echo "║              docker restart storedog-ff-frontend-1            ║"
+echo "║  To stop:    docker compose -f ${FF_DIR}/${COMPOSE_FILE} down ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"

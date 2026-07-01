@@ -288,23 +288,16 @@ setup_extra_flag() {
     echo "      Already exists (id=$fid). Skipping creation."
   else
     local fdata; fdata=$(mktemp)
-    cat > "$fdata" <<JSON
-{
-  "data": {
-    "type": "feature-flags",
-    "attributes": {
-      "key": "${fkey}",
-      "name": "${fname}",
-      "description": "${fdesc}",
-      "value_type": "${vtype}",
-      "variants": [
-        {"key": "${v1key}", "name": "${v1name}", "value": "${v1val}"},
-        {"key": "${v2key}", "name": "${v2name}", "value": "${v2val}"}
-      ]
-    }
-  }
-}
-JSON
+    # Use jq --arg so all values (including JSON strings) are properly escaped
+    jq -n \
+      --arg fkey  "$fkey"  \
+      --arg fname "$fname" \
+      --arg fdesc "$fdesc" \
+      --arg vtype "$vtype" \
+      --arg v1key "$v1key" --arg v1name "$v1name" --arg v1val "$v1val" \
+      --arg v2key "$v2key" --arg v2name "$v2name" --arg v2val "$v2val" \
+      '{data:{type:"feature-flags",attributes:{key:$fkey,name:$fname,description:$fdesc,value_type:$vtype,variants:[{key:$v1key,name:$v1name,value:$v1val},{key:$v2key,name:$v2name,value:$v2val}]}}}' \
+      > "$fdata"
     api_post "POST create ${fkey}" "${API}" "$fdata"
     rm -f "$fdata"
 
@@ -381,13 +374,13 @@ setup_extra_flag \
   "control"      "Control (shipping promo)"  "GET FREE SHIPPING WITH CODE SAGE" \
   "summer-sale"  "Summer Sale variant"       "🔥 SUMMER SALE: 30% OFF EVERYTHING — USE CODE SUMMER30"
 
-# Flag 3: product-grid-columns (NUMBER)
+# Flag 3: product-grid-columns (INTEGER)
 # Controls the number of columns in the /products page grid.
 setup_extra_flag \
   "product-grid-columns" \
   "Product Grid Columns (Storedog workshop)" \
-  "Workshop demo: NUMBER flag — switches the product grid between 3 and 4 columns." \
-  "NUMBER" \
+  "Workshop demo: INTEGER flag — switches the product grid between 3 and 4 columns." \
+  "INTEGER" \
   "standard"  "Standard (3 columns)"  "3" \
   "compact"   "Compact (4 columns)"   "4"
 

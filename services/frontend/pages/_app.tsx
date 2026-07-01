@@ -38,19 +38,18 @@ datadogRum.init({
   silentMultipleInit: true,
   defaultPrivacyLevel: 'mask-user-input',
   allowedTracingUrls: [
-    // Lab Instruqt proxy URLs (backend, discounts, ads exposed via port 80)
     {
-      match: /https:\/\/lab-host-80-.*\.env\.play\.instruqt\.com/,
+      match: /https:\/\/.*\.env.play.instruqt\.com/,
       propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
     },
-    // Local dev
     {
-      match: /^http:\/\/localhost(:\d+)?/,
+      match: /^http:\/\/localhost(:\d+)?$/,
       propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
     },
-    // NOTE: the wildcard /.+/ was intentionally removed — it was injecting
-    // B3 propagation headers into Datadog's own CDN requests (preview.ff-cdn.datadoghq.com)
-    // causing CORS failures that blocked Feature Flag evaluations from loading.
+    {
+      match: /.*/,
+      propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
+    },
   ],
   traceSampleRate: 100,
   allowUntrustedEvents: true,
@@ -88,7 +87,8 @@ if (typeof window !== 'undefined') {
   const sessionId =
     datadogRum.getInternalContext?.()?.session_id ||
     Math.random().toString(36).slice(2)
-  OpenFeature.setProvider(ffProvider, { targetingKey: sessionId })
+  OpenFeature.setProviderAndWait(ffProvider, { targetingKey: sessionId })
+    .catch((err) => console.warn('[FF] Provider init failed, using defaults:', err))
 }
 
 const Noop: FC = ({ children }) => <>{children}</>

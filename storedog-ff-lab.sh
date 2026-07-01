@@ -137,8 +137,18 @@ cd "$FF_DIR"
 # (docker-compose.workshop.yml) requires the GHCR frontend image to be public.
 COMPOSE_FILE="docker-compose.dev.yml"
 
-echo "      Starting workshop stack (rebuilding only frontend — others use cached images)..."
-docker compose -f "$COMPOSE_FILE" up -d --build frontend
+# Try the pre-built workshop compose first (fast pull, no build needed).
+# Falls back to dev compose (build from source) if the image isn't available.
+WORKSHOP_COMPOSE="docker-compose.workshop.yml"
+echo "      Pulling pre-built workshop images..."
+if docker compose -f "$WORKSHOP_COMPOSE" pull --quiet 2>/dev/null; then
+  echo "      Pull successful — using pre-built images (fast path)."
+  COMPOSE_FILE="$WORKSHOP_COMPOSE"
+  docker compose -f "$COMPOSE_FILE" up -d
+else
+  echo "      Pre-built image unavailable — building frontend from source (~2 min)."
+  docker compose -f "$COMPOSE_FILE" up -d --build frontend
+fi
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
@@ -151,5 +161,5 @@ echo "║  RUM Explorer: Filter @feature_flags.*                        ║"
 echo "║                                                               ║"
 echo "║  To update:  git -C ${FF_DIR} pull origin workshop/featureflags-rum ║"
 echo "║              docker restart storedog-ff-frontend-1            ║"
-echo "║  To stop:    docker compose -f ${FF_DIR}/${COMPOSE_FILE} down ║"
+echo "║  To stop:    docker compose -f ${FF_DIR}/\${COMPOSE_FILE} down ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"

@@ -7,6 +7,7 @@ import { ProductCard as ProductCardV2 } from '@components/product/ProductCard/Pr
 import { Container, Skeleton } from '@components/ui'
 import rangeMap from '@lib/range-map'
 import { useBooleanFlagValue } from '@openfeature/react-sdk'
+import { datadogRum } from '@datadog/browser-rum'
 
 import { Product } from '@customTypes/product'
 import { Page } from '@customTypes/page'
@@ -33,6 +34,11 @@ export default function ProductList({
   // and is automatically recorded in every RUM session for variant analysis.
   const frustrationFlagEnabled = useBooleanFlagValue('product-card-frustration', false)
   const resolvedCardVersion = frustrationFlagEnabled ? 'v2' : (cardVersion ?? 'v1')
+
+  useEffect(() => {
+    datadogRum.addFeatureFlagEvaluation('product-card-frustration', frustrationFlagEnabled)
+  }, [frustrationFlagEnabled])
+
   // if products prop is still empty after 5 seconds, show not found message
   const [notFound, setNotFound] = useState(false)
   useEffect(() => {

@@ -17,7 +17,8 @@ export const getPages = async (options: any = {}): Promise<Page[] | any> => {
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const pagesApi: any = await res.json()
@@ -36,8 +37,8 @@ export const getPages = async (options: any = {}): Promise<Page[] | any> => {
 
     return pages
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getPages]', error)
+    throw error
   }
 }
 
@@ -53,7 +54,8 @@ export const getPage = async (slug: string): Promise<Page | any> => {
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const pagesApi: any = await res.json()
@@ -67,7 +69,7 @@ export const getPage = async (slug: string): Promise<Page | any> => {
 
     return page
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getPage]', error)
+    throw error
   }
 }

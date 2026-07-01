@@ -20,6 +20,11 @@ export default async function handler(
     }
   }
 
-  const pages = await getPages()
-  res.status(200).json(pages)
+  try {
+    const pages = await getPages()
+    res.status(200).json(pages)
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'Internal Server Error' })
+  }
 }

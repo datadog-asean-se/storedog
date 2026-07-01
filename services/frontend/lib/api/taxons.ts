@@ -8,9 +8,9 @@ const SPREE_URL_SERVERSIDE = process.env.NEXT_PUBLIC_SPREE_API_HOST
 //  get taxons
 export const getTaxons = async (options: any = {}): Promise<Taxon[] | any> => {
   try {
-    const url = `${SPREE_URL_SERVERSIDE}/storefront/taxons?include=${encodeURIComponent(
+    const url = `${SPREE_URL_SERVERSIDE}/storefront/taxons?include=${
       options.include || ''
-    )}&page=${options.page || 1}&per_page=${options.per_page || 25}`
+    }&page=${options.page || 1}&per_page=${options.per_page || 25}`
 
     const res = await fetch(url, {
       method: 'GET',
@@ -20,7 +20,8 @@ export const getTaxons = async (options: any = {}): Promise<Taxon[] | any> => {
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const taxonsApi: any = await res.json()
@@ -42,8 +43,8 @@ export const getTaxons = async (options: any = {}): Promise<Taxon[] | any> => {
 
     return taxonsObj
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getTaxons]', error)
+    throw error
   }
 }
 
@@ -52,7 +53,7 @@ export const getTaxon = async (options: any = {}): Promise<Taxon | any> => {
   try {
     const url = `${SPREE_URL_SERVERSIDE}/storefront/taxons/${
       options.id
-    }?include=${encodeURIComponent(options.include || '')}`
+    }?include=${options.include || ''}`
 
     const res = await fetch(url, {
       method: 'GET',
@@ -62,7 +63,8 @@ export const getTaxon = async (options: any = {}): Promise<Taxon | any> => {
     })
 
     if (!res.ok) {
-      throw res
+      const body = await res.text().catch(() => '<unreadable>')
+      throw new Error(`Spree ${res.status} ${res.statusText} — ${url} — ${body}`)
     }
 
     const taxonApi = await res.json()
@@ -95,7 +97,7 @@ export const getTaxon = async (options: any = {}): Promise<Taxon | any> => {
 
     return taxonsObj
   } catch (error) {
-    console.log(error)
-    return error
+    console.error('[getTaxon]', error)
+    throw error
   }
 }

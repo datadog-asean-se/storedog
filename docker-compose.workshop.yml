@@ -78,7 +78,7 @@ services:
       # 'http://service-proxy/services/backend/api/v2' when this is unset.
       # nginx is named service-proxy (see below) so either value is consistent;
       # explicit env vars remove any reliance on the hardcoded fallback strings.
-      - NEXT_PUBLIC_SPREE_API_HOST=http://service-proxy/services/backend
+      - NEXT_PUBLIC_SPREE_API_HOST=http://backend:4000
       - NEXT_PUBLIC_SPREE_CLIENT_HOST=/services/backend
       - NEXT_PUBLIC_SPREE_IMAGE_HOST=/services/backend
       - NEXT_PUBLIC_SPREE_ALLOWED_IMAGE_DOMAIN=service-proxy

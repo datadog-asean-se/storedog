@@ -85,7 +85,6 @@ services:
     depends_on:
       - dd-agent
       - backend
-      - service-proxy
     labels:
       com.datadoghq.ad.logs: '[{"source": "nodejs", "service": "store-frontend"}]'
       com.datadoghq.tags.env: "${DD_ENV}"

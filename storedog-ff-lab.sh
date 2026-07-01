@@ -150,6 +150,30 @@ else
   docker compose -f "$COMPOSE_FILE" up -d --build frontend
 fi
 
+# ── Step 6: Wait for frontend to be ready ────────────────────────────────────
+echo ""
+echo "[6/6] Waiting for frontend to be ready..."
+MAX_WAIT=120
+ELAPSED=0
+INTERVAL=5
+READY=0
+while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
+  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost 2>/dev/null || true)
+  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+    READY=1; break
+  fi
+  printf "      Waiting for nginx... HTTP %s (%ss elapsed)\r" "$HTTP_CODE" "$ELAPSED"
+  sleep "$INTERVAL"
+  ELAPSED=$((ELAPSED + INTERVAL))
+done
+
+if [ "$READY" -eq 1 ]; then
+  echo "      ✓ Frontend is up and serving traffic (HTTP $HTTP_CODE)"
+else
+  echo "      ⚠ Frontend did not respond within ${MAX_WAIT}s."
+  echo "      Check: docker compose -f $FF_DIR/$COMPOSE_FILE logs frontend"
+fi
+
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
 echo "║  All done! Your Feature Flags × RUM lab is running.          ║"

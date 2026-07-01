@@ -9,7 +9,14 @@ module.exports = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: [process.env.NEXT_PUBLIC_SPREE_ALLOWED_IMAGE_DOMAIN],
+    // Include 'backend' for direct backend:4000 image URLs (workshop stack),
+    // plus the configured domain (lab env) and common fallbacks.
+    domains: [
+      process.env.NEXT_PUBLIC_SPREE_ALLOWED_IMAGE_DOMAIN,
+      'backend',
+      'service-proxy',
+      'localhost',
+    ].filter(Boolean),
   },
   webpack: (
     config,

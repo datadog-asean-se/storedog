@@ -265,14 +265,158 @@ else
   echo "      https://app.${SITE}/feature-flags/${FLAG_ID}"
 fi
 
+# ════════════════════════════════════════════════════════════════════════════
+# Helper: create, 50/50-allocate, and enable an additional demo flag
+# Usage: setup_extra_flag <flag_key> <flag_name> <desc> <value_type> \
+#                         <v1_key> <v1_name> <v1_value> \
+#                         <v2_key> <v2_name> <v2_value>
+# ════════════════════════════════════════════════════════════════════════════
+setup_extra_flag() {
+  local fkey="$1" fname="$2" fdesc="$3" vtype="$4"
+  local v1key="$5" v1name="$6" v1val="$7"
+  local v2key="$8" v2name="$9" v2val="${10}"
+  local fid="" v1id="" v2id=""
+
+  echo ""
+  echo "--- Flag: ${fkey} (${vtype}) ---"
+
+  # Check if the flag already exists
+  api_get "GET all flags (${fkey})" "${API}"
+  fid=$(cat "$FF_TMP" | jq -r '.data[]? | select(.attributes.key == "'"$fkey"'") | .id // empty' 2>/dev/null | head -1 || true)
+
+  if [ -n "$fid" ]; then
+    echo "      Already exists (id=$fid). Skipping creation."
+  else
+    local fdata; fdata=$(mktemp)
+    cat > "$fdata" <<JSON
+{
+  "data": {
+    "type": "feature-flags",
+    "attributes": {
+      "key": "${fkey}",
+      "name": "${fname}",
+      "description": "${fdesc}",
+      "value_type": "${vtype}",
+      "variants": [
+        {"key": "${v1key}", "name": "${v1name}", "value": "${v1val}"},
+        {"key": "${v2key}", "name": "${v2name}", "value": "${v2val}"}
+      ]
+    }
+  }
+}
+JSON
+    api_post "POST create ${fkey}" "${API}" "$fdata"
+    rm -f "$fdata"
+
+    if [ "$FF_HTTP_CODE" = "409" ]; then
+      echo "      Flag already exists (409). Recovering ID..."
+      api_get "GET all flags (recover ${fkey})" "${API}"
+      fid=$(cat "$FF_TMP" | jq -r '.data[]? | select(.attributes.key == "'"$fkey"'") | .id // empty' 2>/dev/null | head -1 || true)
+    elif [ "$FF_HTTP_CODE" = "200" ] || [ "$FF_HTTP_CODE" = "201" ]; then
+      fid=$(jq -r '.data.id // empty' "$FF_TMP" 2>/dev/null || true)
+      echo "      Created (id=${fid:-unknown})"
+    else
+      echo "WARNING: Could not create '${fkey}' (HTTP $FF_HTTP_CODE). Configure it manually in the UI." >&2
+      return 0
+    fi
+  fi
+
+  [ -z "$fid" ] && echo "WARNING: No ID resolved for '${fkey}'. Skipping allocation." >&2 && return 0
+
+  # Resolve variant IDs from flag detail
+  api_get "GET detail ${fkey}" "${API}/${fid}"
+  v1id=$(cat "$FF_TMP" | jq -r '.data.attributes.variants[]? | select(.key=="'"$v1key"'") | .id // empty' 2>/dev/null | head -1 || true)
+  v2id=$(cat "$FF_TMP" | jq -r '.data.attributes.variants[]? | select(.key=="'"$v2key"'") | .id // empty' 2>/dev/null | head -1 || true)
+
+  # Create 50/50 allocation and enable in the resolved environment
+  if [ -n "${ENV_ID:-}" ] && [ -n "$v1id" ] && [ -n "$v2id" ]; then
+    local afile; afile=$(mktemp)
+    cat > "$afile" <<JSON
+{
+  "data": {
+    "type": "allocations",
+    "attributes": {
+      "name": "Workshop 50/50",
+      "key": "workshop-5050-${fkey}",
+      "type": "FEATURE_GATE",
+      "variant_weights": [
+        {"variant_id": "${v1id}", "value": 50},
+        {"variant_id": "${v2id}", "value": 50}
+      ],
+      "targeting_rules": []
+    }
+  }
+}
+JSON
+    api_post "POST allocation ${fkey}" "${API}/${fid}/environments/${ENV_ID}/allocations" "$afile"
+    rm -f "$afile"
+    if [ "$FF_HTTP_CODE" = "200" ] || [ "$FF_HTTP_CODE" = "201" ]; then
+      echo "      Allocation created (50/50)."
+    else
+      echo "      NOTE: Allocation returned HTTP $FF_HTTP_CODE — configure manually in the UI."
+    fi
+
+    local efile; efile=$(mktemp); echo '{}' > "$efile"
+    api_post "POST enable ${fkey}" "${API}/${fid}/environments/${ENV_ID}/enable" "$efile"
+    rm -f "$efile"
+    echo "      Enabled (HTTP $FF_HTTP_CODE)."
+  else
+    echo "      Skipping allocation (ENV_ID or variant IDs not resolved). Configure manually:"
+  fi
+
+  echo "      URL: https://app.${SITE}/feature-flags/${fid}"
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# Demo flags — STRING, NUMBER, and JSON types for workshop type-diversity demo
+# ════════════════════════════════════════════════════════════════════════════
+
+# Flag 2: promo-banner-message (STRING)
+# Controls the top-of-page promotional banner text on the homepage.
+setup_extra_flag \
+  "promo-banner-message" \
+  "Promo Banner Message (Storedog workshop)" \
+  "Workshop demo: STRING flag — controls the homepage promotional banner copy." \
+  "STRING" \
+  "control"      "Control (shipping promo)"  "GET FREE SHIPPING WITH CODE SAGE" \
+  "summer-sale"  "Summer Sale variant"       "🔥 SUMMER SALE: 30% OFF EVERYTHING — USE CODE SUMMER30"
+
+# Flag 3: product-grid-columns (NUMBER)
+# Controls the number of columns in the /products page grid.
+setup_extra_flag \
+  "product-grid-columns" \
+  "Product Grid Columns (Storedog workshop)" \
+  "Workshop demo: NUMBER flag — switches the product grid between 3 and 4 columns." \
+  "NUMBER" \
+  "standard"  "Standard (3 columns)"  "3" \
+  "compact"   "Compact (4 columns)"   "4"
+
+# Flag 4: homepage-hero-style (JSON)
+# Controls the homepage hero banner background colour, text colour, and badge text.
+# The JSON value is parsed by the frontend and applied via inline styles.
+setup_extra_flag \
+  "homepage-hero-style" \
+  "Homepage Hero Style (Storedog workshop)" \
+  "Workshop demo: JSON flag — drives hero bgColor, textColor, and badge via object value." \
+  "JSON" \
+  "control"  "Control (Datadog purple)"  '{"bgColor":"#632CA6","textColor":"#FFFFFF","badge":""}' \
+  "vibrant"  "Vibrant (orange + badge)"  '{"bgColor":"#FF6B35","textColor":"#FFFFFF","badge":"NEW"}'
+
 # ── Cleanup and summary ───────────────────────────────────────────────────────
 rm -f "$FF_TMP"
 echo ""
 echo "=== Done ==="
-echo "Flag : $FLAG_KEY  (id=$FLAG_ID)"
-echo "URL  : https://app.${SITE}/feature-flags/${FLAG_ID}"
+echo "All 4 workshop flags processed:"
+echo "  Boolean : product-card-frustration   (id=$FLAG_ID)"
+echo "  String  : promo-banner-message"
+echo "  Number  : product-grid-columns"
+echo "  JSON    : homepage-hero-style"
+echo ""
+echo "Datadog Feature Flags dashboard:"
+echo "  https://app.${SITE}/feature-flags"
 echo ""
 echo "Next steps:"
 echo "  docker compose -f docker-compose.dev.yml up -d --build"
-echo "  Open /products — the flag now drives the product card variant"
-echo "  RUM Explorer: filter @feature_flags.${FLAG_KEY}"
+echo "  Homepage  : promo banner + hero style change on flag flip"
+echo "  /products : grid column density changes on flag flip"
+echo "  RUM Explorer: filter @feature_flags.<flag_key> to see variant split"

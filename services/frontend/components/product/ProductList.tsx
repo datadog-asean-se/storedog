@@ -6,7 +6,7 @@ import ProductCard from '@components/product/ProductCard'
 import { ProductCard as ProductCardV2 } from '@components/product/ProductCard/ProductCard-v2'
 import { Container, Skeleton } from '@components/ui'
 import rangeMap from '@lib/range-map'
-import { useBooleanFlagValue } from '@openfeature/react-sdk'
+import { useBooleanFlagValue, useNumberFlagValue } from '@openfeature/react-sdk'
 import { datadogRum } from '@datadog/browser-rum'
 
 import { Product } from '@customTypes/product'
@@ -32,12 +32,21 @@ export default function ProductList({
   // false → normal cards (v1, default / safe state)
   // The flag value from Datadog overrides the server-side cardVersion prop,
   // and is automatically recorded in every RUM session for variant analysis.
+  // Datadog Feature Flag: 'product-card-frustration'
+  // true  → broken thumbnail cards (v2) — drives RUM Frustration Signals
+  // false → normal cards (v1, default / safe state)
   const frustrationFlagEnabled = useBooleanFlagValue('product-card-frustration', false)
   const resolvedCardVersion = frustrationFlagEnabled ? 'v2' : (cardVersion ?? 'v1')
 
+  // Datadog Feature Flag: 'product-grid-columns' (NUMBER)
+  // 3 → standard 3-column grid (default)
+  // 4 → compact 4-column grid
+  const gridColumns = useNumberFlagValue('product-grid-columns', 3)
+
   useEffect(() => {
     datadogRum.addFeatureFlagEvaluation('product-card-frustration', frustrationFlagEnabled)
-  }, [frustrationFlagEnabled])
+    datadogRum.addFeatureFlagEvaluation('product-grid-columns', gridColumns)
+  }, [frustrationFlagEnabled, gridColumns])
 
   // if products prop is still empty after 5 seconds, show not found message
   const [notFound, setNotFound] = useState(false)
@@ -99,7 +108,10 @@ export default function ProductList({
             ) : null}
           </h2>
           {products?.length ? (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 product-grid">
+            <div
+              className="grid gap-6 product-grid"
+              style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
+            >
               {products.map((product: Product) => (
                 <ProductCardComponent
                   variant="simple"

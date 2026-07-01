@@ -137,8 +137,8 @@ cd "$FF_DIR"
 # (docker-compose.workshop.yml) requires the GHCR frontend image to be public.
 COMPOSE_FILE="docker-compose.dev.yml"
 
-echo "      Building and starting workshop stack from source..."
-docker compose -f "$COMPOSE_FILE" up -d --build
+echo "      Starting workshop stack (rebuilding only frontend — others use cached images)..."
+docker compose -f "$COMPOSE_FILE" up -d --build frontend
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"

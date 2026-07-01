@@ -32,9 +32,6 @@ export default function ProductList({
   // false → normal cards (v1, default / safe state)
   // The flag value from Datadog overrides the server-side cardVersion prop,
   // and is automatically recorded in every RUM session for variant analysis.
-  // Datadog Feature Flag: 'product-card-frustration'
-  // true  → broken thumbnail cards (v2) — drives RUM Frustration Signals
-  // false → normal cards (v1, default / safe state)
   const frustrationFlagEnabled = useBooleanFlagValue('product-card-frustration', false)
   const resolvedCardVersion = frustrationFlagEnabled ? 'v2' : (cardVersion ?? 'v1')
 

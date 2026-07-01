@@ -11,15 +11,28 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
     ? `${process.env.NEXT_PUBLIC_FRONTEND_API_ROUTE}/api`
     : 'http://localhost:3000/api'
 
-  const productsRaw = await fetch(`${baseUrl}/products`).then((res) =>
-    res.json()
-  )
+  const productsRaw = await fetch(`${baseUrl}/products`)
+    .then((res) => res.json())
+    .catch((error) => {
+      console.error(error)
+      return []
+    })
   const products: Product[] = Array.isArray(productsRaw) ? productsRaw : []
 
-  const pagesRaw = await fetch(`${baseUrl}/pages`).then((res) => res.json())
+  const pagesRaw = await fetch(`${baseUrl}/pages`)
+    .then((res) => res.json())
+    .catch((error) => {
+      console.error(error)
+      return []
+    })
   const pages: Page[] = Array.isArray(pagesRaw) ? pagesRaw : []
 
-  const taxons = await fetch(`${baseUrl}/taxonomies`).then((res) => res.json())
+  const taxons = await fetch(`${baseUrl}/taxonomies`)
+    .then((res) => res.json())
+    .catch((error) => {
+      console.error(error)
+      return []
+    })
 
   return {
     props: {

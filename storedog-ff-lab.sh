@@ -131,7 +131,21 @@ bash scripts/setup-feature-flags.sh
 # ── Step 5: Start the Feature Flags stack ────────────────────────────────────
 echo "[5/5] Starting Feature Flags × RUM storedog stack..."
 cd "$FF_DIR"
-docker compose -f docker-compose.dev.yml up -d --build
+
+# Use the pre-built workshop compose if the frontend image is already published;
+# fall back to the dev compose (which builds from source) if pull fails.
+WORKSHOP_COMPOSE="docker-compose.workshop.yml"
+DEV_COMPOSE="docker-compose.dev.yml"
+
+echo "      Pulling pre-built workshop images (much faster than building)..."
+if docker compose -f "$WORKSHOP_COMPOSE" pull --quiet 2>/dev/null; then
+  echo "      Pull successful — using pre-built images."
+  docker compose -f "$WORKSHOP_COMPOSE" up -d
+else
+  echo "      Pre-built image not available yet — building from source (this takes ~5 min)."
+  echo "      Tip: the CI workflow will publish the image after the next push to the branch."
+  docker compose -f "$DEV_COMPOSE" up -d --build
+fi
 
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"

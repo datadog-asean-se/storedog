@@ -136,12 +136,20 @@ cd "$FF_DIR"
 WORKSHOP_COMPOSE="docker-compose.workshop.yml"
 COMPOSE_FILE="$WORKSHOP_COMPOSE"
 
-echo "      Pulling pre-built workshop images..."
-if docker compose -f "$WORKSHOP_COMPOSE" pull --quiet 2>/dev/null; then
+echo "      Pulling pre-built workshop images (retrying up to 3 times)..."
+PULL_OK=0
+for attempt in 1 2 3; do
+  if docker pull ghcr.io/datadog-asean-se/storedog/frontend:workshop --quiet 2>/dev/null; then
+    PULL_OK=1; break
+  fi
+  [ "$attempt" -lt 3 ] && echo "      Pull attempt $attempt failed — retrying in 10s..." && sleep 10
+done
+
+if [ "$PULL_OK" -eq 1 ]; then
   echo "      Pull successful — using pre-built images (fast path)."
   docker compose -f "$COMPOSE_FILE" up -d
 else
-  echo "      Pre-built image unavailable — building frontend from source (~2 min)."
+  echo "      Pre-built image unavailable after 3 attempts — building from source (~3 min)."
   COMPOSE_FILE="docker-compose.dev.yml"
   docker compose -f "$COMPOSE_FILE" up -d --build frontend
 fi

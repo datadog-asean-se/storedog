@@ -235,6 +235,13 @@ services:
     restart: always
     ports:
       - "80:80"
+    # Mount fixed nginx config to override the version baked into the ECR image.
+    # The ECR image's location /services/backend block lacked a trailing slash,
+    # causing proxy_pass to produce double-slash paths (//api/...) which the
+    # backend rejected, falling requests through to Next.js as CMS page slugs.
+    volumes:
+      - ./services/nginx/default.conf.template:/etc/nginx/conf.d/default.conf.template:ro
+      - ./services/nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
     depends_on:
       - dd-agent
       - frontend

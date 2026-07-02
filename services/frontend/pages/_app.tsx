@@ -38,18 +38,19 @@ datadogRum.init({
   silentMultipleInit: true,
   defaultPrivacyLevel: 'mask-user-input',
   allowedTracingUrls: [
+    // Lab Instruqt proxy (port 80 only — the one exposed to students)
     {
-      match: /https:\/\/.*\.env.play.instruqt\.com/,
+      match: /https:\/\/lab-host-80-.*\.env\.play\.instruqt\.com/,
       propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
     },
+    // Local development
     {
-      match: /^http:\/\/localhost(:\d+)?$/,
+      match: /^http:\/\/localhost(:\d+)?/,
       propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
     },
-    {
-      match: /.*/,
-      propagatorTypes: ['tracecontext', 'datadog', 'b3', 'b3multi'],
-    },
+    // NOTE: wildcard /.+/ intentionally removed — it injected B3 trace headers
+    // into Datadog's own Feature Flags CDN (preview.ff-cdn.datadoghq.com) and
+    // evaluation intake, causing CORS preflight failures that blocked FF from loading.
   ],
   traceSampleRate: 100,
   allowUntrustedEvents: true,

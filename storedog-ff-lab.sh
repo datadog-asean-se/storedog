@@ -45,7 +45,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # ── Step 1: Stop any existing storedog stack + free port 80 ─────────────────
-echo "[1/5] Stopping any running storedog stacks..."
+echo "[1/6] Stopping any running storedog stacks..."
 
 # Try the detected base dir first
 if [ -f "${LAB_BASE_DIR}/docker-compose.dev.yml" ]; then
@@ -77,7 +77,7 @@ fi
 echo "      Done."
 
 # ── Step 2: Clone or update the workshop branch ──────────────────────────────
-echo "[2/5] Setting up workshop repo at ${FF_DIR}..."
+echo "[2/6] Setting up workshop repo at ${FF_DIR}..."
 if [ -d "${FF_DIR}/.git" ]; then
   echo "      Directory exists — pulling latest..."
   git -C "$FF_DIR" fetch origin "$BRANCH"
@@ -90,7 +90,7 @@ echo "      Branch: $(git -C "$FF_DIR" rev-parse --abbrev-ref HEAD)"
 echo "      Commit: $(git -C "$FF_DIR" log -1 --oneline)"
 
 # ── Step 3: Copy lab credentials ────────────────────────────────────────────
-echo "[3/5] Copying lab credentials..."
+echo "[3/6] Copying lab credentials..."
 if [ -n "$LAB_ENV" ]; then
   cp "$LAB_ENV" "${FF_DIR}/.env"
   echo "      Copied from ${LAB_ENV}"
@@ -122,55 +122,67 @@ if [ -f "${FF_DIR}/.env" ]; then
 fi
 
 # ── Step 4: Create Datadog Feature Flag ─────────────────────────────────────
-echo "[4/5] Creating Datadog Feature Flag in your lab org..."
+echo "[4/6] Creating Datadog Feature Flags in your lab org..."
 cd "$FF_DIR"
 # Source credentials for the setup script
 set -o allexport; source .env; set +o allexport
 bash scripts/setup-feature-flags.sh
 
 # ── Step 5: Start the Feature Flags stack ────────────────────────────────────
-echo "[5/5] Starting Feature Flags × RUM storedog stack..."
+echo "[5/6] Starting Feature Flags × RUM storedog stack..."
 cd "$FF_DIR"
 
-# Always use docker-compose.dev.yml — it mounts the source from disk so
-# code fixes take effect without rebuilding the image. The workshop compose
-# (docker-compose.workshop.yml) requires the GHCR frontend image to be public.
-COMPOSE_FILE="docker-compose.dev.yml"
-
-# Try the pre-built workshop compose first (fast pull, no build needed).
-# Falls back to dev compose (build from source) if the image isn't available.
+# Default to the pre-built workshop compose; fall back to dev only if pull fails.
 WORKSHOP_COMPOSE="docker-compose.workshop.yml"
+COMPOSE_FILE="$WORKSHOP_COMPOSE"
+
 echo "      Pulling pre-built workshop images..."
 if docker compose -f "$WORKSHOP_COMPOSE" pull --quiet 2>/dev/null; then
   echo "      Pull successful — using pre-built images (fast path)."
-  COMPOSE_FILE="$WORKSHOP_COMPOSE"
   docker compose -f "$COMPOSE_FILE" up -d
 else
   echo "      Pre-built image unavailable — building frontend from source (~2 min)."
+  COMPOSE_FILE="docker-compose.dev.yml"
   docker compose -f "$COMPOSE_FILE" up -d --build frontend
 fi
 
-# ── nginx config injection ────────────────────────────────────────────────────
-# The ECR nginx image (public.ecr.aws/x2b9z2t7/storedog/nginx:1.2.4) ignores
-# volume-mounted template files and uses its own built-in config.  We copy the
-# correct template in and re-render it with the right upstreams for this stack.
-echo "      Injecting nginx routing config..."
-sleep 3  # wait for nginx container to initialise
-docker cp "$FF_DIR/services/nginx/default.conf.template" storedog-ff-service-proxy-1:/etc/nginx/conf.d/default.conf.template
-docker exec storedog-ff-service-proxy-1 sh -c "
-  export NGINX_RESOLVER=127.0.0.11
-  export ADS_A_UPSTREAM=ads-java:8080
-  export ADS_SERVICE_B_BLOCK=''
-  export UPSTREAM_CONFIG='server ads-java:8080;'
-  envsubst '\$NGINX_RESOLVER \$ADS_A_UPSTREAM \$ADS_B_UPSTREAM \$UPSTREAM_CONFIG \$ADS_SERVICE_B_BLOCK' \
-    < /etc/nginx/conf.d/default.conf.template \
-    > /etc/nginx/conf.d/default.conf
-" && docker exec storedog-ff-service-proxy-1 nginx -s reload 2>/dev/null || true
-echo "      nginx routing updated."
-
-# ── Step 6: Wait for frontend to be ready ────────────────────────────────────
+# ── Step 6: nginx injection + frontend readiness ─────────────────────────────
+# The ECR nginx image ignores volume-mounted templates; we copy and re-render
+# inside the running container.  Only attempt after nginx is confirmed running,
+# with up to 3 retries (5 s apart) before giving up.
 echo ""
-echo "[6/6] Waiting for frontend to be ready..."
+echo "[6/6] Waiting for nginx and frontend to be ready..."
+
+NGINX_INJECTED=0
+for _attempt in 1 2 3; do
+  NGINX_RUNNING=$(docker inspect --format '{{.State.Running}}' storedog-ff-service-proxy-1 2>/dev/null || echo "false")
+  if [ "$NGINX_RUNNING" != "true" ]; then
+    echo "      nginx not yet running — waiting 5s (attempt ${_attempt}/3)..."
+    sleep 5
+    continue
+  fi
+  echo "      nginx running — injecting routing config (attempt ${_attempt}/3)..."
+  if docker cp "$FF_DIR/services/nginx/default.conf.template" \
+        storedog-ff-service-proxy-1:/etc/nginx/conf.d/default.conf.template 2>/dev/null \
+  && docker exec storedog-ff-service-proxy-1 sh -c "
+       export NGINX_RESOLVER=127.0.0.11
+       export ADS_A_UPSTREAM=ads-java:8080
+       export ADS_SERVICE_B_BLOCK=''
+       export UPSTREAM_CONFIG='server ads-java:8080;'
+       envsubst '\$NGINX_RESOLVER \$ADS_A_UPSTREAM \$ADS_B_UPSTREAM \$UPSTREAM_CONFIG \$ADS_SERVICE_B_BLOCK' \
+         < /etc/nginx/conf.d/default.conf.template \
+         > /etc/nginx/conf.d/default.conf
+     " 2>/dev/null \
+  && docker exec storedog-ff-service-proxy-1 nginx -s reload 2>/dev/null; then
+    echo "      ✓ nginx routing config injected and reloaded."
+    NGINX_INJECTED=1
+    break
+  fi
+  echo "      Inject attempt ${_attempt}/3 failed — retrying in 5s..."
+  sleep 5
+done
+[ "$NGINX_INJECTED" -eq 0 ] && echo "      ⚠ nginx config injection failed after 3 attempts — check: docker logs storedog-ff-service-proxy-1"
+
 MAX_WAIT=120
 ELAPSED=0
 INTERVAL=5
@@ -180,7 +192,7 @@ while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
   if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
     READY=1; break
   fi
-  printf "      Waiting for nginx... HTTP %s (%ss elapsed)\r" "$HTTP_CODE" "$ELAPSED"
+  printf "      Waiting for frontend... HTTP %s (%ss elapsed)\r" "$HTTP_CODE" "$ELAPSED"
   sleep "$INTERVAL"
   ELAPSED=$((ELAPSED + INTERVAL))
 done

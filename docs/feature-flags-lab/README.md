@@ -100,20 +100,34 @@ The script will:
 > ╔══════════════════════════════════════════════════════╗
 > ║  Storedog — Feature Flags × RUM Workshop Lab Setup  ║
 > ╚══════════════════════════════════════════════════════╝
-> [1/5] Base storedog compose not found at /root/lab — skipping stop.
-> [2/5] Setting up workshop repo at /root/storedog-ff...
-> [3/5] Copying lab credentials...       Copied from /root/lab/.env
-> [4/5] Creating Datadog Feature Flags in your lab org...
+> [1/6] Stopping any running storedog stacks...
+>       Done.
+> [2/6] Setting up workshop repo at /root/storedog-ff...
+>       Branch: workshop/featureflags-rum
+>       Commit: abc1234 feat: add OpenFeature + RUM integration
+> [3/6] Copying lab credentials...
+>       Copied from /root/lab/.env
+>       Added NEXT_PUBLIC_DD_APPLICATION_ID to .env
+>       Added NEXT_PUBLIC_DD_CLIENT_TOKEN to .env
+> [4/6] Creating Datadog Feature Flags in your lab org...
 >       === Datadog Feature Flags — Workshop Setup ===
->       [1/5] Validating credentials... OK (HTTP 200)
->       [2/5] Resolving flag environments... Using environment: 'Development'
->       [3/5] Creating flag 'product-card-frustration'... Created (id=...)
->       [3/5] Creating flag 'promo-banner-message'... Created (id=...)
->       [3/5] Creating flag 'product-grid-columns'... Created (id=...)
->       [3/5] Creating flag 'homepage-hero-style'... Created (id=...)
->       [4/5] Setting up allocations... Enabled (HTTP 200).
+>       [1/4] Validating credentials... OK (HTTP 200)
+>       [2/4] Resolving flag environments... Using environment: 'Development'
+>       [3/4] Creating flags...
+>             Creating flag 'product-card-frustration'... Created (id=...)
+>             Creating flag 'promo-banner-message'... Created (id=...)
+>             Creating flag 'product-grid-columns'... Created (id=...)
+>             Creating flag 'homepage-hero-style'... Created (id=...)
+>       [4/4] Setting up allocations... Enabled (HTTP 200).
 >       === Done ===
-> [5/5] Starting Feature Flags × RUM storedog stack...
+> [5/6] Starting Feature Flags × RUM storedog stack...
+>       Pulling pre-built workshop images...
+>       Pull successful — using pre-built images (fast path).
+>
+> [6/6] Waiting for nginx and frontend to be ready...
+>       nginx running — injecting routing config (attempt 1/3)...
+>       ✓ nginx routing config injected and reloaded.
+>       ✓ Frontend is up and serving traffic (HTTP 200)
 > ╔═══════════════════════════════════════════════════════════════╗
 > ║  All done! Your Feature Flags × RUM lab is running.          ║
 > ╚═══════════════════════════════════════════════════════════════╝
@@ -122,10 +136,10 @@ The script will:
 ### Step 1.2 — Verify the stack is running
 
 ```bash
-docker compose -f /root/storedog-ff/docker-compose.dev.yml ps
+docker compose -f /root/storedog-ff/docker-compose.workshop.yml ps
 ```
 
-All services (`frontend`, `backend`, `dd-agent`, `puppeteer`, etc.) should show **Up**.
+All services (`frontend`, `backend`, `dd-agent`, `service-proxy`, `puppeteer`, etc.) should show **Up**.
 
 ### Step 1.3 — Troubleshooting the setup script
 
@@ -137,6 +151,16 @@ bash scripts/setup-feature-flags.sh --debug
 ```
 
 Debug mode prints the raw JSON response from every Datadog API call, making it easy to spot the exact failure.
+
+### Step 1.4 — Known Lab Behaviors
+
+The following are **expected and intentional** — not errors to investigate:
+
+| Behavior | Why it's expected |
+|---|---|
+| `GET /services/ads` returns HTTP 500 | Intentional: part of the base Storedog `error-tracking` feature flag demo. The ads service purposely errors in this environment. |
+| Discounts service returns HTTP 502 | Expected: the discounts service is not included in the workshop stack. nginx returns 502 for that route by design. |
+| Browser console shows `index.js: Cannot redefine property: get` | Harmless: a known quirk in the OpenFeature browser SDK initialization on some Next.js versions. It does not affect flag evaluation or RUM tracking. |
 
 ---
 
@@ -262,6 +286,17 @@ Click into `product-card-frustration`. Observe:
 The same structure applies to all 4 flags — each has a `control` and an "on" variant, and each is enabled in the `Development` environment.
 
 > **Instructor note:** This page is the "flag as a dashboard" story — real-time RUM signals split by variant, all in one place without switching tools.
+
+### Step 3.3 — Verify the lab is working ✅
+
+After the setup script completes, use this checklist to confirm everything is wired up correctly before walking students through the rest of the lab:
+
+- [ ] **Datadog → Digital Experience → Feature Flags** → find `product-card-frustration` → **Development: ENABLED**
+- [ ] **Visit `/products`** in the Storedog app → product thumbnails are **not clickable** (frustration variant is active — images are not linked)
+- [ ] **RUM Explorer** → filter `@feature_flags.product-card-frustration:frustration` → sessions appear within 1–2 minutes of Puppeteer traffic
+- [ ] **Feature Flag page for `product-card-frustration`** → **Client Evaluations** chart shows data (may take ~1 minute to populate)
+
+If any of these checks fail, rerun the setup script or check `docker logs storedog-ff-service-proxy-1` for nginx routing issues.
 
 ---
 
@@ -412,7 +447,7 @@ When done, stop the Feature Flags lab stack and restore the original Storedog if
 
 ```bash
 # Stop the FF stack
-docker compose -f /root/storedog-ff/docker-compose.dev.yml down
+docker compose -f /root/storedog-ff/docker-compose.workshop.yml down
 
 # Restart the original base stack (if needed for the next lab section)
 docker compose -f /root/storedog/docker-compose.dev.yml up -d

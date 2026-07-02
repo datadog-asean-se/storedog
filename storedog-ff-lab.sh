@@ -150,6 +150,24 @@ else
   docker compose -f "$COMPOSE_FILE" up -d --build frontend
 fi
 
+# ── nginx config injection ────────────────────────────────────────────────────
+# The ECR nginx image (public.ecr.aws/x2b9z2t7/storedog/nginx:1.2.4) ignores
+# volume-mounted template files and uses its own built-in config.  We copy the
+# correct template in and re-render it with the right upstreams for this stack.
+echo "      Injecting nginx routing config..."
+sleep 3  # wait for nginx container to initialise
+docker cp "$FF_DIR/services/nginx/default.conf.template" storedog-ff-service-proxy-1:/etc/nginx/conf.d/default.conf.template
+docker exec storedog-ff-service-proxy-1 sh -c "
+  export NGINX_RESOLVER=127.0.0.11
+  export ADS_A_UPSTREAM=ads-java:8080
+  export ADS_SERVICE_B_BLOCK=''
+  export UPSTREAM_CONFIG='server ads-java:8080;'
+  envsubst '\$NGINX_RESOLVER \$ADS_A_UPSTREAM \$ADS_B_UPSTREAM \$UPSTREAM_CONFIG \$ADS_SERVICE_B_BLOCK' \
+    < /etc/nginx/conf.d/default.conf.template \
+    > /etc/nginx/conf.d/default.conf
+" && docker exec storedog-ff-service-proxy-1 nginx -s reload 2>/dev/null || true
+echo "      nginx routing updated."
+
 # ── Step 6: Wait for frontend to be ready ────────────────────────────────────
 echo ""
 echo "[6/6] Waiting for frontend to be ready..."

@@ -14,7 +14,7 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "@datadog/browser-rum": "^6.19.0",
+    "@datadog/browser-rum": "^6.33.0",
     "@datadog/openfeature-browser": "^1.2.3",
     "@openfeature/core": "^1.11.0",
     "@openfeature/react-sdk": "^1.4.1",

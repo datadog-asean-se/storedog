@@ -481,6 +481,31 @@ Developer commits → CI runs Synthetics → PASS → feature flag promoted to p
                                         → FAIL → pipeline blocked, developer notified
 ```
 
+### Step 8.0 — Prerequisites: Tag your Synthetics tests with `storedog`
+
+The CI script discovers tests using `--search "tag:storedog"`. Tag your Storedog Synthetics tests first:
+
+**Option A — Datadog UI**
+1. Go to **Digital Experience → Synthetics → Tests**
+2. Click on a Storedog Synthetics test (created during the main RUM + Synthetics lab)
+3. Click **Edit** → scroll to **Tags** → add `storedog` → Save
+
+**Option B — List and tag via API**
+
+```bash
+# From the lab host — list your Synthetics tests
+source /root/storedog-ff/.env
+curl -s \
+  -H "DD-API-KEY: $DD_API_KEY" \
+  -H "DD-APPLICATION-KEY: $DD_APP_KEY" \
+  "https://api.datadoghq.com/api/v1/synthetics/tests" \
+  | jq -r '.tests[] | "\(.public_id)  \(.name)"'
+```
+
+Copy a `public_id` from the output and use it with `--public-id` in the TUI, or tag the test in the UI so it's discoverable by `tag:storedog`.
+
+> **No Synthetics tests yet?** Select **Run Demo Mode** in the TUI — it simulates a realistic CI PASS/FAIL without any configured tests.
+
 ### Step 8.1 — Run the CI Pipeline Simulation
 
 The workshop includes a TUI (Terminal User Interface) CI demo script that:

@@ -468,7 +468,102 @@ From the Test Coverage page, click **+ New Test** next to the uncovered action t
 
 ---
 
-## Part 8 — Clean Up
+## Part 8 — Continuous Testing in CI/CD (SE Demo Lead)
+
+### The story
+
+Feature flags give you the rollback switch. Guardrail metrics give you automated rollback on RUM signals. But **what about catching the regression before it reaches real users at all?**
+
+That's what [Datadog Continuous Testing](https://docs.datadoghq.com/continuous_testing/) does — it runs your Synthetics tests as a **blocking quality gate** in CI/CD, before a flag rollout promotes to the next environment.
+
+```
+Developer commits → CI runs Synthetics → PASS → feature flag promoted to production
+                                        → FAIL → pipeline blocked, developer notified
+```
+
+### Step 8.1 — Run the CI Pipeline Simulation
+
+The workshop includes a TUI (Terminal User Interface) CI demo script that:
+1. Shows the Bits AI mascot in your terminal
+2. Presents an interactive menu to choose your CI action
+3. Displays the exact `datadog-ci` command used (so you can copy it into your own CI/CD pipeline)
+4. Runs real Synthetics tests against the live Storedog app
+
+```bash
+cd /root/storedog-ff
+source .env
+bash scripts/run-ci-check.sh
+```
+
+**Menu options:**
+| Option | Action |
+|---|---|
+| Run Synthetics Tests (tag:storedog) | Runs all Synthetics tests tagged `storedog` with the tunnel |
+| Run with specific test ID | Prompts for a Synthetics public ID, then runs that test |
+| Run Demo Mode | Scripted simulation — no API keys needed, shows a realistic PASS/FAIL |
+| View Feature Flag status | Shows the current state of `product-card-frustration` in Datadog |
+
+**Keyboard shortcuts:** `↑↓` navigate · `Enter` select · `r` run · `d` demo · `q` quit
+
+### Step 8.2 — The `datadog-ci` Command
+
+When the script runs a real Synthetics test, it displays the command first:
+
+```bash
+$ npx @datadog/datadog-ci synthetics run-tests \
+    --search "tag:storedog" \
+    --tunnel
+```
+
+**To add this to a real CI/CD pipeline**, copy the command into your pipeline YAML. Example for GitHub Actions:
+
+```yaml
+- name: Run Datadog Synthetics
+  env:
+    DATADOG_API_KEY: ${{ secrets.DD_API_KEY }}
+    DATADOG_APP_KEY: ${{ secrets.DD_APP_KEY }}
+  run: |
+    npx @datadog/datadog-ci synthetics run-tests \
+      --search "tag:storedog" \
+      --tunnel
+```
+
+The `--tunnel` flag creates a secure connection from the Datadog worker to your local/staging environment — no firewall changes needed.
+
+### Step 8.3 — Non-interactive mode (true CI usage)
+
+The script also runs non-interactively for actual CI pipelines:
+
+```bash
+# By tag
+bash scripts/run-ci-check.sh --search "tag:storedog"
+
+# By specific public ID
+bash scripts/run-ci-check.sh --public-id <PUBLIC_ID>
+
+# Demo mode (for workshops without live Synthetics)
+bash scripts/run-ci-check.sh --demo
+```
+
+Exits with code `0` on pass, `1` on fail — standard CI gate behavior.
+
+### Step 8.4 — Connect the loop
+
+The full safe-release loop now looks like:
+
+```
+1. Developer enables feature flag at 10% rollout
+2. CI/CD runs Synthetics tests (this script) — catches obvious breakage
+3. Datadog Guardrail Metrics watch RUM signals — catches subtle degradation
+4. If both pass → promote rollout to 100%
+5. If either fails → flag rolls back automatically
+```
+
+**Reference:** [Continuous Testing CI/CD Integration](https://docs.datadoghq.com/continuous_testing/cicd_integrations/configuration?tab=npm)
+
+---
+
+## Part 9 — Clean Up
 
 When done, stop the Feature Flags lab stack and restore the original Storedog if needed:
 

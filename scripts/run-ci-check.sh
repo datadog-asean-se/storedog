@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Storedog CI Pipeline — Synthetics Demo Script
+# Storedog CI Pipeline — Interactive TUI
 # Part of: Feature Flags × RUM Workshop (workshop/featureflags-rum)
 #
-# Usage:
-#   bash scripts/run-ci-check.sh [--public-id <test-id>] [--search "tag:storedog"]
+# Interactive usage (TUI):
+#   bash scripts/run-ci-check.sh
+#
+# Non-interactive (CI / scripted):
+#   bash scripts/run-ci-check.sh --public-id <test-id>
+#   bash scripts/run-ci-check.sh --search "tag:storedog"
+#   bash scripts/run-ci-check.sh --demo
 #
 # Environment (read from .env if not in shell):
 #   DD_API_KEY            Datadog API key
@@ -30,10 +35,65 @@ pass_line() { echo -e "  ${GREEN}✔${RESET}  $*"; }
 fail_line() { echo -e "  ${RED}✘${RESET}  $*"; }
 info_line() { echo -e "  ${DIM}ℹ${RESET}  $*"; }
 
-# ── Demo mode: simulate a realistic Synthetics failure ────────────────────────
+# ── Bits Dog ASCII art (lines, no leading echo -e) ───────────────────────────
+BITS_DOG=(
+  "                    ################    "
+  "     ###############################    "
+  "######################## ###########    "
+  "########  ####### ####    ## #######    "
+  "#####      #            ##### ######    "
+  "#####      ##             ###########   "
+  " #####     ##    ###     ############   "
+  " #######  ###   ####     ############   "
+  " ###########    ####        #########   "
+  " ########                 ###########   "
+  " ########                #### #######   "
+  "  #########      #        ##  ######### "
+  "  ##########     ####    ############## "
+  "  ###########    ###########       #### "
+  "  ###########    ##               ##### "
+  "   #########     ##          #### ######"
+  "   #######  ##   ##         ############"
+  "   #####     ### ##   ############### ##"
+  "   ####       ### ## ###################"
+  "    ###        #########################"
+  "    #####       ########################"
+  "               ## ###########           "
+  "          #######                       "
+  "              Bits  🐾                  "
+)
+
+# ── .env loading ──────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/../.env"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a; source "$ENV_FILE"; set +a
+fi
+
+export DATADOG_API_KEY="${DD_API_KEY:-}"
+export DATADOG_APP_KEY="${DD_APP_KEY:-}"
+export DATADOG_SITE="${DD_SITE:-datadoghq.com}"
+
+# ── CLI arg parsing ───────────────────────────────────────────────────────────
+CUSTOM_PUBLIC_ID="${SYNTHETICS_PUBLIC_ID:-}"
+SEARCH_QUERY="tag:storedog"
+NON_INTERACTIVE=false
+DEMO_ARG=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --public-id) CUSTOM_PUBLIC_ID="$2"; NON_INTERACTIVE=true; shift 2 ;;
+    --search)    SEARCH_QUERY="$2";     NON_INTERACTIVE=true; shift 2 ;;
+    --demo)      DEMO_ARG=true;         NON_INTERACTIVE=true; shift ;;
+    *)           shift ;;
+  esac
+done
+
+# ── Demo mode ────────────────────────────────────────────────────────────────
 run_demo_mode() {
   echo ""
-  info_line "No Synthetics tests found or API keys missing. Running in demo mode..."
+  info_line "Running in demo mode (no API keys needed)..."
   echo ""
   sleep 1
   echo -e "  ${CYAN}📊${RESET}  Test: /products page load time < 3s ........... ${GREEN}PASS${RESET}"
@@ -70,130 +130,351 @@ print_result() {
   echo ""
 }
 
-# ── CLI arg parsing ───────────────────────────────────────────────────────────
-CUSTOM_PUBLIC_ID="${SYNTHETICS_PUBLIC_ID:-}"
-SEARCH_QUERY="tag:storedog"
+# ── Ensure datadog-ci is available ───────────────────────────────────────────
+ensure_datadog_ci() {
+  if ! command -v datadog-ci &>/dev/null; then
+    info_line "datadog-ci not found — installing @datadog/datadog-ci globally..."
+    if npm install -g @datadog/datadog-ci --silent 2>/dev/null; then
+      pass_line "datadog-ci installed"
+    else
+      fail_line "npm install failed — check npm/node availability"
+      return 1
+    fi
+  fi
+  return 0
+}
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --public-id)  CUSTOM_PUBLIC_ID="$2"; shift 2 ;;
-    --search)     SEARCH_QUERY="$2";     shift 2 ;;
-    *)            shift ;;
-  esac
-done
+# ── Action: run synthetics by search ─────────────────────────────────────────
+run_synthetics_search() {
+  echo ""
+  step "1/4" "Installing dependencies..."
+  sleep 1
+  pass_line "node_modules ready"
+  echo ""
+  step "2/4" "Running unit tests..."
+  sleep 1
+  pass_line "ProductCard renders correctly"
+  pass_line "Cart total calculation"
+  pass_line "Discount code validation"
+  echo -e "  ${GREEN}${BOLD}Unit tests: 3/3 passed${RESET}"
+  echo ""
+  step "3/4" "Running Synthetics end-to-end tests..."
+  echo ""
 
-# ── Load .env if keys not already in environment ──────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/../.env"
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  set -a; source "$ENV_FILE"; set +a
-fi
+  if ! ensure_datadog_ci; then
+    run_demo_mode; DEMO_EXIT=$?; print_result "$DEMO_EXIT"; return "$DEMO_EXIT"
+  fi
 
-export DATADOG_API_KEY="${DD_API_KEY:-}"
-export DATADOG_APP_KEY="${DD_APP_KEY:-}"
-export DATADOG_SITE="${DD_SITE:-datadoghq.com}"
+  if [[ -z "${DATADOG_API_KEY}" || -z "${DATADOG_APP_KEY}" ]]; then
+    echo -e "  ${RED}${BOLD}Missing DD_API_KEY or DD_APP_KEY.${RESET}"
+    echo -e "  ${DIM}Run: source .env   (or export them in your shell)${RESET}"
+    run_demo_mode; DEMO_EXIT=$?; print_result "$DEMO_EXIT"; return "$DEMO_EXIT"
+  fi
 
-# ── Header ────────────────────────────────────────────────────────────────────
-clear
-echo ""
-echo -e "${PURPLE}╔═══════════════════════════════════════════════╗${RESET}"
-echo -e "${PURPLE}║${WHITE}  🐶  Datadog CI Pipeline  ·  Storedog         ${PURPLE}║${RESET}"
-echo -e "${PURPLE}║${DIM}      Powered by Continuous Testing            ${PURPLE}║${RESET}"
-echo -e "${PURPLE}╚═══════════════════════════════════════════════╝${RESET}"
-echo ""
-echo -e "${PURPLE}                    ################    ${RESET}"
-echo -e "${PURPLE}     ###############################    ${RESET}"
-echo -e "${PURPLE}######################## ###########    ${RESET}"
-echo -e "${PURPLE}########  ####### ####    ## #######    ${RESET}"
-echo -e "${PURPLE}#####      #            ##### ######    ${RESET}"
-echo -e "${PURPLE}#####      ##             ###########   ${RESET}"
-echo -e "${PURPLE} #####     ##    ###     ############   ${RESET}"
-echo -e "${PURPLE} #######  ###   ####     ############   ${RESET}"
-echo -e "${PURPLE} ###########    ####        #########   ${RESET}"
-echo -e "${PURPLE} ########                 ###########   ${RESET}"
-echo -e "${PURPLE} ########                #### #######   ${RESET}"
-echo -e "${PURPLE}  #########      #        ##  ######### ${RESET}"
-echo -e "${PURPLE}  ##########     ####    ############## ${RESET}"
-echo -e "${PURPLE}  ###########    ###########       #### ${RESET}"
-echo -e "${PURPLE}  ###########    ##               ##### ${RESET}"
-echo -e "${PURPLE}   #########     ##          #### ######${RESET}"
-echo -e "${PURPLE}   #######  ##   ##         ############${RESET}"
-echo -e "${PURPLE}   #####     ### ##   ############### ##${RESET}"
-echo -e "${PURPLE}   ####       ### ## ###################${RESET}"
-echo -e "${PURPLE}    ###        #########################${RESET}"
-echo -e "${PURPLE}    #####       ########################${RESET}"
-echo -e "${PURPLE}               ## ###########           ${RESET}"
-echo -e "${PURPLE}          #######                       ${RESET}"
-echo -e "${BOLD}${WHITE}              Bits  🐾${RESET}"
-echo ""
-echo -e "${DIM}  Site: ${DATADOG_SITE}   Branch: workshop/featureflags-rum${RESET}"
-echo ""
+  local args=(synthetics run-tests --tunnel --search "${SEARCH_QUERY}")
+  echo -e "  ${DIM}» datadog-ci ${args[*]}${RESET}"
+  echo ""
+  SYNTHETICS_EXIT=0
+  datadog-ci "${args[@]}" 2>&1 || SYNTHETICS_EXIT=$?
+  print_result "$SYNTHETICS_EXIT"
+  return "$SYNTHETICS_EXIT"
+}
 
-# ── Step 1: Install deps (simulated) ─────────────────────────────────────────
-step "1/4" "Installing dependencies..."
-sleep 1
-pass_line "node_modules ready"
-echo ""
+# ── Action: run synthetics by public ID ──────────────────────────────────────
+run_synthetics_id() {
+  local pub_id="$1"
+  echo ""
+  step "1/4" "Installing dependencies..."
+  sleep 1
+  pass_line "node_modules ready"
+  echo ""
+  step "2/4" "Running unit tests..."
+  sleep 1
+  pass_line "ProductCard renders correctly"
+  pass_line "Cart total calculation"
+  pass_line "Discount code validation"
+  echo -e "  ${GREEN}${BOLD}Unit tests: 3/3 passed${RESET}"
+  echo ""
+  step "3/4" "Running Synthetics end-to-end tests..."
+  echo ""
 
-# ── Step 2: Unit tests (always pass in this demo) ────────────────────────────
-step "2/4" "Running unit tests..."
-sleep 1
-pass_line "ProductCard renders correctly"
-pass_line "Cart total calculation"
-pass_line "Discount code validation"
-echo -e "  ${GREEN}${BOLD}Unit tests: 3/3 passed${RESET}"
-echo ""
+  if ! ensure_datadog_ci; then
+    run_demo_mode; DEMO_EXIT=$?; print_result "$DEMO_EXIT"; return "$DEMO_EXIT"
+  fi
 
-# ── Step 3: Synthetics e2e ────────────────────────────────────────────────────
-step "3/4" "Running Synthetics end-to-end tests..."
-echo ""
+  if [[ -z "${DATADOG_API_KEY}" || -z "${DATADOG_APP_KEY}" ]]; then
+    echo -e "  ${RED}${BOLD}Missing DD_API_KEY or DD_APP_KEY.${RESET}"
+    echo -e "  ${DIM}Run: source .env   (or export them in your shell)${RESET}"
+    run_demo_mode; DEMO_EXIT=$?; print_result "$DEMO_EXIT"; return "$DEMO_EXIT"
+  fi
 
-# Install datadog-ci if not present
-if ! command -v datadog-ci &>/dev/null; then
-  info_line "datadog-ci not found — installing @datadog/datadog-ci globally..."
-  if npm install -g @datadog/datadog-ci --silent 2>/dev/null; then
-    pass_line "datadog-ci installed"
+  local args=(synthetics run-tests --public-id "${pub_id}")
+  echo -e "  ${DIM}» datadog-ci ${args[*]}${RESET}"
+  echo ""
+  SYNTHETICS_EXIT=0
+  datadog-ci "${args[@]}" 2>&1 || SYNTHETICS_EXIT=$?
+  print_result "$SYNTHETICS_EXIT"
+  return "$SYNTHETICS_EXIT"
+}
+
+# ── Action: view feature flag status ─────────────────────────────────────────
+view_flag_status() {
+  echo ""
+  step "FF" "Fetching feature flag: product-card-frustration"
+  echo ""
+
+  if [[ -z "${DATADOG_API_KEY}" || -z "${DATADOG_APP_KEY}" ]]; then
+    echo -e "  ${RED}${BOLD}Missing DD_API_KEY or DD_APP_KEY — cannot call Datadog API.${RESET}"
+    echo -e "  ${DIM}Run: source .env   (or export them in your shell)${RESET}"
+    echo ""
+    return 1
+  fi
+
+  local site="${DATADOG_SITE:-datadoghq.com}"
+  local response
+  response=$(curl -sf \
+    -H "DD-API-KEY: ${DATADOG_API_KEY}" \
+    -H "DD-APPLICATION-KEY: ${DATADOG_APP_KEY}" \
+    "https://api.${site}/api/v2/feature_management/feature_flags?search[name]=product-card-frustration" \
+    2>&1)
+  local curl_exit=$?
+
+  if [[ $curl_exit -ne 0 ]]; then
+    fail_line "API request failed (curl exit ${curl_exit})"
+    echo -e "  ${DIM}${response}${RESET}"
+    echo ""
+    return 1
+  fi
+
+  echo -e "  ${DIM}Raw response:${RESET}"
+  echo ""
+  # Pretty-print JSON if jq is available, otherwise raw
+  if command -v jq &>/dev/null; then
+    echo "$response" | jq '.' 2>/dev/null || echo "$response"
   else
-    fail_line "npm install failed — check npm/node availability"
+    echo "$response"
+  fi
+  echo ""
+
+  # Extract enabled status if jq available
+  if command -v jq &>/dev/null; then
+    local flag_state
+    flag_state=$(echo "$response" | jq -r '.data[0].attributes.enabled // "unknown"' 2>/dev/null)
+    if [[ "$flag_state" == "true" ]]; then
+      echo -e "  ${RED}${BOLD}⚑  product-card-frustration:  ENABLED  ← frustration variant is live${RESET}"
+    elif [[ "$flag_state" == "false" ]]; then
+      echo -e "  ${GREEN}${BOLD}⚑  product-card-frustration:  DISABLED${RESET}"
+    else
+      echo -e "  ${ORANGE}⚑  product-card-frustration:  status unknown${RESET}"
+    fi
+    echo ""
+  fi
+}
+
+# =============================================================================
+# NON-INTERACTIVE MODE — skip TUI when CLI args are passed
+# =============================================================================
+if [[ "$NON_INTERACTIVE" == true ]]; then
+  clear
+  echo ""
+  echo -e "${PURPLE}╔═══════════════════════════════════════════════╗${RESET}"
+  echo -e "${PURPLE}║${WHITE}  🐶  Datadog CI Pipeline  ·  Storedog         ${PURPLE}║${RESET}"
+  echo -e "${PURPLE}║${DIM}      Powered by Continuous Testing            ${PURPLE}║${RESET}"
+  echo -e "${PURPLE}╚═══════════════════════════════════════════════╝${RESET}"
+  echo ""
+  for line in "${BITS_DOG[@]}"; do
+    echo -e "${PURPLE}${line}${RESET}"
+  done
+  echo ""
+  echo -e "${DIM}  Site: ${DATADOG_SITE}   Branch: workshop/featureflags-rum${RESET}"
+  echo ""
+
+  if [[ "$DEMO_ARG" == true ]]; then
     run_demo_mode
     DEMO_EXIT=$?
     print_result "$DEMO_EXIT"
     exit "$DEMO_EXIT"
+  elif [[ -n "${CUSTOM_PUBLIC_ID}" ]]; then
+    run_synthetics_id "${CUSTOM_PUBLIC_ID}"
+    exit $?
+  else
+    run_synthetics_search
+    exit $?
   fi
 fi
 
-# Validate keys before calling the API
-if [[ -z "${DATADOG_API_KEY}" || -z "${DATADOG_APP_KEY}" ]]; then
-  echo -e "  ${RED}${BOLD}Missing DD_API_KEY or DD_APP_KEY.${RESET}"
-  echo -e "  ${DIM}Run: source .env   (or export them in your shell)${RESET}"
-  run_demo_mode
-  DEMO_EXIT=$?
-  print_result "$DEMO_EXIT"
-  exit "$DEMO_EXIT"
-fi
+# =============================================================================
+# INTERACTIVE TUI MODE
+# =============================================================================
 
-# Build the datadog-ci command
-DD_CI_ARGS=(synthetics run-tests --tunnel)
+MENU_ITEMS=(
+  "Run Synthetics Tests (tag:storedog)"
+  "Run with specific test ID..."
+  "Run Demo Mode (no API keys needed)"
+  "View Feature Flag status"
+)
+ITEMS=${#MENU_ITEMS[@]}
+SELECTED=0
 
-if [[ -n "${CUSTOM_PUBLIC_ID}" ]]; then
-  DD_CI_ARGS+=(--public-id "${CUSTOM_PUBLIC_ID}")
-else
-  DD_CI_ARGS+=(--search "${SEARCH_QUERY}")
-fi
+# ── TUI draw functions ────────────────────────────────────────────────────────
+draw_header() {
+  local cols
+  cols=$(tput cols)
+  local title="  🐶  Datadog CI Pipeline  ·  Storedog"
+  local sub="     workshop/featureflags-rum  ·  ${DATADOG_SITE}"
 
-echo -e "  ${DIM}» datadog-ci ${DD_CI_ARGS[*]}${RESET}"
-echo ""
+  tput cup 0 0
+  echo -e "${PURPLE}╔$(printf '═%.0s' $(seq 1 $((cols-2))))╗${RESET}"
+  tput cup 1 0
+  # Pad title to fill the box
+  local padded
+  padded=$(printf "%-$((cols-4))s" "${title}")
+  echo -e "${PURPLE}║${WHITE}${padded}  ${PURPLE}║${RESET}"
+  tput cup 2 0
+  echo -e "${PURPLE}╚$(printf '═%.0s' $(seq 1 $((cols-2))))╝${RESET}"
+}
 
-# Run Synthetics — capture exit code without aborting on failure
-SYNTHETICS_EXIT=0
-datadog-ci "${DD_CI_ARGS[@]}" 2>&1 || SYNTHETICS_EXIT=$?
+draw_bits_dog() {
+  local start_row=4
+  for i in "${!BITS_DOG[@]}"; do
+    tput cup $((start_row + i)) 2
+    echo -e "${PURPLE}${BITS_DOG[$i]}${RESET}"
+  done
+}
 
-# If datadog-ci exited with 0 but reported "no tests found" we fall to demo mode
-# (datadog-ci prints "No test was found" and exits 0 when the search has no results)
-if [[ $SYNTHETICS_EXIT -eq 0 ]]; then
-  : # real tests ran and passed — continue to result banner
-fi
+draw_menu() {
+  local selected=$1
+  local art_lines=${#BITS_DOG[@]}
+  local menu_row=$((4 + art_lines + 1))
+  local cols
+  cols=$(tput cols)
+  local inner_width=$((cols - 4))
 
-print_result "$SYNTHETICS_EXIT"
-exit "$SYNTHETICS_EXIT"
+  tput cup "$menu_row" 0
+  echo -e "${WHITE}  ┌─ Select Action $(printf '─%.0s' $(seq 1 $((inner_width - 15))))┐${RESET}"
+
+  tput cup $((menu_row + 1)) 0
+  echo -e "${WHITE}  │$(printf ' %.0s' $(seq 1 $((inner_width + 1))))│${RESET}"
+
+  for i in "${!MENU_ITEMS[@]}"; do
+    local label="${MENU_ITEMS[$i]}"
+    tput cup $((menu_row + 2 + i)) 0
+    if [[ $i -eq $selected ]]; then
+      local padded
+      padded=$(printf "%-${inner_width}s" "  ▶  ${label}")
+      echo -e "${WHITE}  │${RESET}${BOLD}${CYAN}${padded}${RESET}${WHITE}│${RESET}"
+    else
+      local padded
+      padded=$(printf "%-${inner_width}s" "     ${label}")
+      echo -e "${WHITE}  │${DIM}${padded}${RESET}${WHITE}│${RESET}"
+    fi
+  done
+
+  tput cup $((menu_row + 2 + ITEMS)) 0
+  echo -e "${WHITE}  │$(printf ' %.0s' $(seq 1 $((inner_width + 1))))│${RESET}"
+  tput cup $((menu_row + 3 + ITEMS)) 0
+  echo -e "${WHITE}  └$(printf '─%.0s' $(seq 1 $((inner_width + 1))))┘${RESET}"
+}
+
+draw_bottom_bar() {
+  local lines
+  lines=$(tput lines)
+  local cols
+  cols=$(tput cols)
+  local bar="  ↑↓ Navigate   Enter Select   r Run   d Demo   q Quit  "
+  local padded
+  padded=$(printf "%-$((cols-2))s" "${bar}")
+
+  tput cup $((lines - 2)) 0
+  echo -e "${PURPLE}╔$(printf '═%.0s' $(seq 1 $((cols-2))))╗${RESET}"
+  tput cup $((lines - 1)) 0
+  echo -e "${PURPLE}║${WHITE}${padded}${PURPLE}║${RESET}"
+}
+
+draw_all() {
+  tput clear
+  draw_header
+  draw_bits_dog
+  draw_menu "$SELECTED"
+  draw_bottom_bar
+}
+
+# ── Action dispatcher (runs in full-screen, then waits for keypress) ──────────
+run_action() {
+  local action=$1
+  # Restore cursor, clear screen for action output
+  tput cnorm
+  tput rmcup
+
+  echo ""
+  echo -e "${PURPLE}╔═══════════════════════════════════════════════╗${RESET}"
+  echo -e "${PURPLE}║${WHITE}  🐶  Datadog CI Pipeline  ·  Storedog         ${PURPLE}║${RESET}"
+  echo -e "${PURPLE}╚═══════════════════════════════════════════════╝${RESET}"
+  echo ""
+
+  case $action in
+    0)
+      run_synthetics_search
+      ;;
+    1)
+      echo -e "${WHITE}${BOLD}Enter Synthetics public ID:${RESET} "
+      IFS= read -r pub_id
+      if [[ -z "$pub_id" ]]; then
+        echo -e "  ${RED}No ID entered — cancelled.${RESET}"
+      else
+        run_synthetics_id "$pub_id"
+      fi
+      ;;
+    2)
+      run_demo_mode
+      DEMO_EXIT=$?
+      print_result "$DEMO_EXIT"
+      ;;
+    3)
+      view_flag_status
+      ;;
+  esac
+
+  echo ""
+  echo -e "${DIM}Press any key to return to menu...${RESET}"
+  IFS= read -rsn1
+
+  # Re-enter TUI mode
+  tput smcup
+  tput civis
+}
+
+# ── Main TUI loop ─────────────────────────────────────────────────────────────
+cleanup() {
+  tput cnorm
+  tput rmcup
+  echo "Goodbye! 🐾"
+  exit 0
+}
+
+trap cleanup INT TERM EXIT
+
+tput smcup   # save terminal state / enter alternate screen
+tput civis   # hide cursor
+
+while true; do
+  draw_all
+
+  IFS= read -rsn1 key
+  # Detect escape sequences (arrow keys)
+  if [[ $key == $'\x1b' ]]; then
+    IFS= read -rsn2 -t 0.1 rest
+    key="${key}${rest}"
+  fi
+
+  case "$key" in
+    $'\x1b[A'|k)           SELECTED=$(( (SELECTED - 1 + ITEMS) % ITEMS )) ;;  # up / k
+    $'\x1b[B'|j)           SELECTED=$(( (SELECTED + 1) % ITEMS )) ;;          # down / j
+    $'\x0a'|$'\x0d')       run_action "$SELECTED" ;;                           # Enter
+    r|R)                   run_action 0 ;;                                     # run synthetics
+    d|D)                   run_action 2 ;;                                     # demo
+    q|Q|$'\x1b')           break ;;                                            # quit
+  esac
+done
+
+# cleanup is called by trap

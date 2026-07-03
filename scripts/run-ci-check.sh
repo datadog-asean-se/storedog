@@ -35,6 +35,48 @@ pass_line() { echo -e "  ${GREEN}✔${RESET}  $*"; }
 fail_line() { echo -e "  ${RED}✘${RESET}  $*"; }
 info_line() { echo -e "  ${DIM}ℹ${RESET}  $*"; }
 
+# ── Command preview box ───────────────────────────────────────────────────────
+# Usage: show_command_box --flag [value] --flag [value] ...
+# Flags are displayed in cyan, values in white, each on its own indented line.
+show_command_box() {
+  echo ""
+  echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════════╗${RESET}"
+  echo -e "${PURPLE}║${ORANGE}${BOLD}  📋  Continuous Testing — CI/CD Command                          ${PURPLE}║${RESET}"
+  echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════════╝${RESET}"
+  echo ""
+  echo -e "  ${ORANGE}\$${RESET} ${WHITE}npx @datadog/datadog-ci synthetics run-tests \\${RESET}"
+
+  local i=1
+  local total=$#
+  while [[ $i -le $total ]]; do
+    local flag="${!i}"
+    i=$((i + 1))
+    if [[ "$flag" == --* ]]; then
+      local next=""
+      if [[ $i -le $total ]]; then next="${!i}"; fi
+      if [[ -n "$next" && "$next" != --* ]]; then
+        i=$((i + 1))
+        if [[ $i -gt $total ]]; then
+          echo -e "      ${CYAN}${flag}${RESET} ${WHITE}\"${next}\"${RESET}"
+        else
+          echo -e "      ${CYAN}${flag}${RESET} ${WHITE}\"${next}\"${RESET} ${CYAN}\\${RESET}"
+        fi
+      else
+        if [[ $i -gt $total ]]; then
+          echo -e "      ${CYAN}${flag}${RESET}"
+        else
+          echo -e "      ${CYAN}${flag}${RESET} ${CYAN}\\${RESET}"
+        fi
+      fi
+    fi
+  done
+
+  echo ""
+  echo -e "  ${DIM}Reference: https://docs.datadoghq.com/continuous_testing/cicd_integrations/${RESET}"
+  echo ""
+  sleep 1
+}
+
 # ── Bits Dog ASCII art (lines, no leading echo -e) ───────────────────────────
 BITS_DOG=(
   "                    ################    "
@@ -93,6 +135,17 @@ done
 # ── Demo mode ────────────────────────────────────────────────────────────────
 run_demo_mode() {
   echo ""
+  echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════════╗${RESET}"
+  echo -e "${PURPLE}║${ORANGE}${BOLD}  📋  Demo Mode — Simulated CI Pipeline                           ${PURPLE}║${RESET}"
+  echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════════╝${RESET}"
+  echo ""
+  echo -e "  ${DIM}In a real CI/CD pipeline, you would run:${RESET}"
+  echo ""
+  echo -e "  ${ORANGE}\$${RESET} ${WHITE}npx @datadog/datadog-ci synthetics run-tests \\${RESET}"
+  echo -e "      ${CYAN}--search${RESET} ${WHITE}\"tag:storedog\"${RESET} ${CYAN}\\${RESET}"
+  echo -e "      ${CYAN}--tunnel${RESET}"
+  echo ""
+  sleep 1
   info_line "Running in demo mode (no API keys needed)..."
   echo ""
   sleep 1
@@ -172,8 +225,7 @@ run_synthetics_search() {
   fi
 
   local args=(synthetics run-tests --tunnel --search "${SEARCH_QUERY}")
-  echo -e "  ${DIM}» datadog-ci ${args[*]}${RESET}"
-  echo ""
+  show_command_box --search "${SEARCH_QUERY}" --tunnel
   SYNTHETICS_EXIT=0
   datadog-ci "${args[@]}" 2>&1 || SYNTHETICS_EXIT=$?
   print_result "$SYNTHETICS_EXIT"
@@ -209,8 +261,7 @@ run_synthetics_id() {
   fi
 
   local args=(synthetics run-tests --public-id "${pub_id}")
-  echo -e "  ${DIM}» datadog-ci ${args[*]}${RESET}"
-  echo ""
+  show_command_box --public-id "${pub_id}"
   SYNTHETICS_EXIT=0
   datadog-ci "${args[@]}" 2>&1 || SYNTHETICS_EXIT=$?
   print_result "$SYNTHETICS_EXIT"

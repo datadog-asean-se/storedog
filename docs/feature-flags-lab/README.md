@@ -476,8 +476,8 @@ When done, stop the Feature Flags lab stack and restore the original Storedog if
 # Stop the FF stack
 docker compose -f /root/storedog-ff/docker-compose.workshop.yml down
 
-# Restart the original base stack (if needed for the next lab section)
-docker compose -f /root/storedog/docker-compose.dev.yml up -d
+# Restart the original lab stack
+docker compose -f /root/lab/docker-compose.yml up -d
 ```
 
 The flag in Datadog will remain in your lab org. You can archive it from the Feature Flags UI if you want a clean state.
@@ -569,45 +569,3 @@ The lab's `.env` uses unprefixed names (`DD_APPLICATION_ID`, `DD_CLIENT_TOKEN`).
 - [Guardrail Metrics blog post](https://www.datadoghq.com/blog/guardrail-metrics/)
 - [Stop babysitting releases blog post](https://www.datadoghq.com/blog/feature-flags/)
 - [`@datadog/openfeature-browser` on npm](https://www.npmjs.com/package/@datadog/openfeature-browser)
-
----
-
-## Part 8 — Simulate CI with Synthetics (SE Demo Lead)
-
-Run the CI pipeline simulation from the lab host:
-
-```bash
-cd /root/storedog-ff
-source .env  # loads DD_API_KEY, DD_APP_KEY
-bash scripts/run-ci-check.sh
-```
-
-This uses `@datadog/datadog-ci` to run real Synthetics tests from the Datadog Learn lab environment.
-If the `product-card-frustration` flag is enabled (frustration variant), the Synthetic test
-detecting broken thumbnail navigation will fail CI — exactly what guardrail metrics prevent automatically.
-
-You can also target a specific Synthetics test by public ID:
-
-```bash
-bash scripts/run-ci-check.sh --public-id abc-def-ghi
-```
-
-Or narrow the search to a different tag:
-
-```bash
-bash scripts/run-ci-check.sh --search "tag:storedog env:workshop"
-```
-
-**What the script does:**
-
-| Step | Description | Outcome |
-|---|---|---|
-| `[1/4]` Installing dependencies | Simulated — always succeeds | PASS |
-| `[2/4]` Unit tests | Simulated — always passes | PASS |
-| `[3/4]` Synthetics e2e | Runs real `datadog-ci synthetics run-tests --tunnel` | PASS or FAIL |
-| `[4/4]` Evaluate results | Prints green ✅ or red ❌ banner | — |
-
-If no Synthetics tests are found or API keys are missing, the script falls back to a **demo mode** that
-simulates a failed "Product thumbnail navigation" test — matching the frustration signal story.
-
-Reference: https://docs.datadoghq.com/continuous_testing/cicd_integrations/configuration?tab=npm

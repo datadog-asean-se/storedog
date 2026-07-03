@@ -441,7 +441,34 @@ This is the practical lesson: adding OpenFeature + Datadog to an existing Next.j
 
 ---
 
-## Part 7 — Clean Up
+## Part 7 — Synthetics Test Coverage
+
+The [Test Coverage page](https://docs.datadoghq.com/synthetics/platform/test_coverage) in Datadog shows which real-user actions captured by RUM are covered by Synthetic tests — and which aren't.
+
+### Step 7.1 — Open Test Coverage
+
+1. Navigate to **Digital Experience → Synthetics → Test Coverage**
+2. Select the **Storedog** RUM application from the dropdown
+3. The page shows all RUM Actions Datadog has seen real users perform
+
+### Step 7.2 — Find the uncovered action
+
+Look for the **product thumbnail click** action on the `/products` page. When the `product-card-frustration` flag is enabled:
+- Real users are clicking on product thumbnails (which are dead links in the frustration variant)
+- These clicks appear as RUM Actions
+- **But there is no Synthetic test covering this action** — so CI would never catch the regression automatically
+
+This is the gap that Feature Flags + Guardrail Metrics close: when a code change silently breaks a user flow that no Synthetic covers, guardrails catch the RUM signal (rage clicks, frustration signals) and auto-rollback.
+
+### Step 7.3 — Create a Synthetic test for the gap (optional)
+
+From the Test Coverage page, click **+ New Test** next to the uncovered action to generate a Synthetic browser test that covers the product thumbnail navigation.
+
+> **Key insight:** Test Coverage shows you where your Synthetic safety net has holes. Feature Flag guardrail metrics fill those holes automatically until a new Synthetic test can be written.
+
+---
+
+## Part 8 — Clean Up
 
 When done, stop the Feature Flags lab stack and restore the original Storedog if needed:
 

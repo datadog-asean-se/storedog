@@ -6,7 +6,7 @@ import ProductCard from '@components/product/ProductCard'
 import { ProductCard as ProductCardV2 } from '@components/product/ProductCard/ProductCard-v2'
 import { Container, Skeleton } from '@components/ui'
 import rangeMap from '@lib/range-map'
-import { useBooleanFlagValue, useNumberFlagValue } from '@openfeature/react-sdk'
+import { useBooleanFlagValue } from '@openfeature/react-sdk'
 import { datadogRum } from '@datadog/browser-rum'
 
 import { Product } from '@customTypes/product'
@@ -35,15 +35,29 @@ export default function ProductList({
   const frustrationFlagEnabled = useBooleanFlagValue('product-card-frustration', false)
   const resolvedCardVersion = frustrationFlagEnabled ? 'v2' : (cardVersion ?? 'v1')
 
-  // Datadog Feature Flag: 'product-grid-columns' (NUMBER)
-  // 3 → standard 3-column grid (default)
-  // 4 → compact 4-column grid
-  const gridColumns = useNumberFlagValue('product-grid-columns', 3)
-
   useEffect(() => {
     datadogRum.addFeatureFlagEvaluation('product-card-frustration', frustrationFlagEnabled)
-    datadogRum.addFeatureFlagEvaluation('product-grid-columns', gridColumns)
-  }, [frustrationFlagEnabled, gridColumns])
+  }, [frustrationFlagEnabled])
+
+  // When frustration variant is active, simulate a frontend error
+  // that gets tracked in Datadog RUM Error Tracking
+  useEffect(() => {
+    if (frustrationFlagEnabled && products?.length > 0) {
+      // Report a custom error to RUM — this appears in Error Tracking
+      // linked to the frustration flag variant
+      try {
+        // Intentional error: trying to access thumbnail link on non-linked cards
+        throw new Error('[storedog] ProductCard-v2: thumbnail navigation failed — product links unavailable in current variant')
+      } catch (err) {
+        datadogRum.addError(err, {
+          source: 'custom',
+          feature_flag: 'product-card-frustration',
+          variant: 'frustration',
+          affected_users: products.length,
+        })
+      }
+    }
+  }, [frustrationFlagEnabled, products?.length])
 
   // if products prop is still empty after 5 seconds, show not found message
   const [notFound, setNotFound] = useState(false)
@@ -105,10 +119,7 @@ export default function ProductList({
             ) : null}
           </h2>
           {products?.length ? (
-            <div
-              className="grid gap-6 product-grid"
-              style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}
-            >
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 product-grid">
               {products.map((product: Product) => (
                 <ProductCardComponent
                   variant="simple"

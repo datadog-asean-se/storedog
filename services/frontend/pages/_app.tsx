@@ -13,6 +13,7 @@ import ErrorBoundary from '@components/ErrorBoundary'
 import { OpenFeatureProvider } from '@openfeature/react-sdk'
 import { OpenFeature } from '@openfeature/web-sdk'
 import { DatadogProvider } from '@datadog/openfeature-browser'
+import FFDebugPanel from '@components/common/FFDebugPanel/FFDebugPanel'
 
 datadogRum.init({
   applicationId: `${
@@ -133,6 +134,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
             </Layout>
           </ManagedUIContext>
         </CartProvider>
+        <FFDebugPanel />
       </OpenFeatureProvider>
     </>
   )

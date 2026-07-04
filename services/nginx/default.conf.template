@@ -13,6 +13,17 @@ upstream ads_upstream {
 server {
     listen 80;
 
+    # Direct /ads path — matches the original lab's exposed ads port URL pattern
+    # Allows Synthetics tests to use https://lab-host-80-*/ads
+    location /ads {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        rewrite ^/ads(/.*)$ $1 break;
+        proxy_pass http://ads_upstream/;
+    }
+
     # Reverse proxy for ads
     location /services/ads {
         proxy_set_header Host $host;

@@ -181,6 +181,8 @@ services:
       - DD_PROFILING_ENABLED=true
       - DD_PROFILING_TIMELINE_ENABLED=true
       - DD_PROFILING_ALLOCATION_ENABLED=true
+    ports:
+      - "${ADS_PORT:-9292}:3030"
     networks:
       - storedog-network
     labels:
